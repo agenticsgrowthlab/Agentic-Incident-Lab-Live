@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "buildCommand": "next build",
+  "functions": {
+    "api/analyze.py": {
+      "maxDuration": 300,
+      "memory": 2048,
+      "includeFiles": "knowledge/**",
+      "excludeFiles": "{tests/**,__tests__/**,.next/**,dist/**,examples/**}"
+    }
+  }
+}
