@@ -1,0 +1,9 @@
+openai>=2.0,<3
+fastapi>=0.141,<1
+uvicorn>=0.35,<1
+langgraph>=1.0,<2
+crewai>=1.15,<2
+autogen-agentchat>=0.7,<0.8
+autogen-ext[openai]>=0.7,<0.8
+psycopg[binary]>=3.2,<4
+typing-extensions>=4.12,<5
