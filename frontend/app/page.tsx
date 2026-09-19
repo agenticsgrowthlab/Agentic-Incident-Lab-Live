@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -280,6 +280,12 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState("incident");
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState(0);
+  const [wizardPosition, setWizardPosition] = useState({ x: 80, y: 110 });
+  const wizardDragRef = useRef<{
+    pointerId: number;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
   const [wizardData, setWizardData] = useState<WizardData>({
     rail: "ACH",
     otherRail: "",
@@ -305,6 +311,56 @@ export default function Home() {
         "I’m Chatty. I can read the current incident context, saved incidents in Neon, and indexed incident evidence. Ask me what to check next or whether this has happened before.",
     },
   ]);
+
+  const openWizard = () => {
+    if (typeof window !== "undefined") {
+      const panelWidth = Math.min(672, Math.max(320, window.innerWidth - 32));
+      setWizardPosition({
+        x: Math.max(16, Math.round((window.innerWidth - panelWidth) / 2)),
+        y: Math.max(72, Math.min(120, Math.round(window.innerHeight * 0.12))),
+      });
+    }
+    setWizardStep(0);
+    setWizardOpen(true);
+  };
+
+  const startWizardDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    const panel = event.currentTarget.parentElement;
+    if (!panel) return;
+
+    const rect = panel.getBoundingClientRect();
+    wizardDragRef.current = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const moveWizard = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = wizardDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    const panelWidth = Math.min(672, Math.max(320, window.innerWidth - 32));
+    const maxX = Math.max(16, window.innerWidth - panelWidth - 16);
+    const maxY = Math.max(72, window.innerHeight - 120);
+
+    setWizardPosition({
+      x: Math.min(maxX, Math.max(16, event.clientX - drag.offsetX)),
+      y: Math.min(maxY, Math.max(72, event.clientY - drag.offsetY)),
+    });
+  };
+
+  const stopWizardDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (wizardDragRef.current?.pointerId === event.pointerId) {
+      wizardDragRef.current = null;
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      } catch {
+        // Pointer may already be released.
+      }
+    }
+  };
 
   const selectedRail =
     wizardData.rail === "Other"
@@ -877,26 +933,23 @@ export default function Home() {
       <div className="mx-auto mt-4 max-w-[1500px] px-4 lg:px-8">
         <button
           type="button"
-          onClick={() => {
-            setWizardStep(0);
-            setWizardOpen(true);
-          }}
-          className="flex w-full items-center justify-between rounded-xl border border-amber-300/30 bg-amber-300/[0.08] px-4 py-3 text-left transition hover:bg-amber-300/[0.12]"
+          onClick={openWizard}
+          className="flex w-full items-center justify-between rounded-xl border border-yellow-300 bg-yellow-400 px-4 py-3 text-left text-white shadow-lg shadow-yellow-950/15 transition hover:bg-yellow-300"
         >
           <div className="flex items-center gap-3">
-            <div className="grid size-9 place-items-center rounded-lg border border-amber-300/25 bg-amber-300/[0.08] text-amber-200">
+            <div className="grid size-9 place-items-center rounded-lg border border-white/35 bg-white/15 text-white">
               <AlertTriangle className="size-4" />
             </div>
             <div>
-              <div className="text-sm font-bold tracking-wide text-amber-100">
+              <div className="text-sm font-bold tracking-wide text-white">
                 START HERE
               </div>
-              <div className="mt-0.5 text-xs text-amber-100/65">
+              <div className="mt-0.5 text-xs text-white/90">
                 Guided incident intake — capture the right payment details without having to remember the process.
               </div>
             </div>
           </div>
-          <ChevronRight className="size-4 text-amber-200" />
+          <ChevronRight className="size-4 text-white" />
         </button>
       </div>
 
@@ -2214,28 +2267,45 @@ export default function Home() {
       </Tabs>
 
       {wizardOpen && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-2xl border border-amber-300/20 bg-[#08101b] shadow-2xl">
-            <div className="flex items-start justify-between border-b border-white/10 p-5">
+        <div className="pointer-events-none fixed inset-0 z-50">
+          <div
+            className="pointer-events-auto fixed flex max-h-[82vh] w-[min(42rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-amber-300/30 bg-[#08101b] shadow-2xl"
+            style={{
+              left: `${wizardPosition.x}px`,
+              top: `${wizardPosition.y}px`,
+            }}
+          >
+            <div
+              onPointerDown={startWizardDrag}
+              onPointerMove={moveWizard}
+              onPointerUp={stopWizardDrag}
+              onPointerCancel={stopWizardDrag}
+              className="flex cursor-move touch-none items-start justify-between border-b border-white/10 bg-yellow-400 p-5 text-white select-none"
+              title="Drag to move"
+            >
               <div>
-                <div className="eyebrow text-amber-200">START HERE</div>
+                <div className="text-xs font-bold tracking-[0.18em] text-white/90">
+                  START HERE · DRAG TO MOVE
+                </div>
                 <h2 className="mt-2 text-xl font-semibold text-white">
                   Guided payment incident intake
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-white/85">
                   Step {wizardStep + 1} of 4 · We’ll write the incident description for you.
                 </p>
               </div>
               <button
                 type="button"
+                onPointerDown={(event) => event.stopPropagation()}
                 onClick={() => setWizardOpen(false)}
-                className="rounded-lg border border-white/10 p-2 text-slate-500 hover:text-white"
+                className="rounded-lg border border-white/35 bg-white/15 p-2 text-white transition hover:bg-white/25"
+                aria-label="Close guided incident intake"
               >
                 <X className="size-4" />
               </button>
             </div>
 
-            <div className="p-5">
+            <div className="overflow-y-auto p-5">
               {wizardStep === 0 && (
                 <div className="grid gap-4">
                   <label className="grid gap-2 text-sm text-slate-300">
@@ -2450,7 +2520,7 @@ export default function Home() {
               )}
             </div>
 
-            <div className="flex items-center justify-between border-t border-white/10 p-5">
+            <div className="shrink-0 flex items-center justify-between border-t border-white/10 bg-[#08101b] p-5">
               <Button
                 type="button"
                 variant="outline"
