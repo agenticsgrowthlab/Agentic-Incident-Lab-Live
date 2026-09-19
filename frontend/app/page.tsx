@@ -16,6 +16,7 @@ import {
   Eye,
   FileSearch,
   FileText,
+  LoaderCircle,
   GitBranch,
   LockKeyhole,
   Network,
@@ -106,6 +107,18 @@ type IncidentRecord = {
   lessons_learned?: string | null;
   created_at: string;
   updated_at: string;
+};
+
+type KnowledgeDocument = {
+  id: string;
+  title: string;
+  filename: string;
+  content_type: string;
+  doc_type: string;
+  incident_id?: string | null;
+  chunk_count: number;
+  created_at: string;
+  status: string;
 };
 
 const API_URL = process.env.NEXT_PUBLIC_AGENT_API_URL || "/api/analyze";
@@ -224,26 +237,80 @@ export default function Home() {
   const [selectedIncident, setSelectedIncident] =
     useState<IncidentRecord | null>(null);
 
-  const addPriorFiles = (incoming: FileList | null) => {
-    if (!incoming) return;
+  const [knowledgeDocuments, setKnowledgeDocuments] = useState<KnowledgeDocument[]>([]);
+  const [knowledgeUploadState, setKnowledgeUploadState] =
+    useState<"idle" | "uploading" | "indexed" | "error">("idle");
+  const [knowledgeMessage, setKnowledgeMessage] = useState<string | null>(null);
+
+  const inferDocType = (filename: string) => {
+    const lower = filename.toLowerCase();
+    if (lower.includes("rca") || lower.includes("postmortem")) return "RCA";
+    if (lower.includes("runbook")) return "RUNBOOK";
+    if (lower.includes("schema") || lower.includes("data-model") || lower.includes("data_model")) return "DATA_MODEL";
+    if (lower.includes("telemetry") || lower.includes("log")) return "INCIDENT_TELEMETRY";
+    return "INCIDENT_EVIDENCE";
+  };
+
+  const loadKnowledgeDocuments = async () => {
+    try {
+      const response = await fetch("/api/knowledge", { cache: "no-store" });
+      if (!response.ok) return;
+      setKnowledgeDocuments((await response.json()) as KnowledgeDocument[]);
+    } catch {
+      // Keep the current list if the backend is temporarily unavailable.
+    }
+  };
+
+  const uploadPriorFiles = async (incoming: FileList | null) => {
+    if (!incoming || incoming.length === 0) return;
 
     const additions = Array.from(incoming);
-
     setPriorFiles((current) => {
       const seen = new Set(
-        current.map(
-          (file) => `${file.name}:${file.size}:${file.lastModified}`
-        )
+        current.map((file) => `${file.name}:${file.size}:${file.lastModified}`)
       );
-
       return [
         ...current,
         ...additions.filter(
-          (file) =>
-            !seen.has(`${file.name}:${file.size}:${file.lastModified}`)
+          (file) => !seen.has(`${file.name}:${file.size}:${file.lastModified}`)
         ),
       ];
     });
+
+    setKnowledgeUploadState("uploading");
+    setKnowledgeMessage(`Uploading and indexing ${additions.length} file${additions.length === 1 ? "" : "s"}…`);
+
+    try {
+      for (const file of additions) {
+        const form = new FormData();
+        form.append("file", file);
+        form.append("doc_type", inferDocType(file.name));
+        if (savedIncidentId) form.append("incident_id", savedIncidentId);
+
+        const response = await fetch("/api/knowledge/upload", {
+          method: "POST",
+          body: form,
+        });
+
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(
+            String(payload.detail || `Upload failed for ${file.name}`)
+          );
+        }
+      }
+
+      await loadKnowledgeDocuments();
+      setKnowledgeUploadState("indexed");
+      setKnowledgeMessage(
+        `${additions.length} file${additions.length === 1 ? "" : "s"} stored in Neon and indexed in pgvector.`
+      );
+    } catch (cause) {
+      setKnowledgeUploadState("error");
+      setKnowledgeMessage(
+        cause instanceof Error ? cause.message : "Knowledge upload failed"
+      );
+    }
   };
 
   const removePriorFile = (index: number) => {
@@ -520,6 +587,11 @@ export default function Home() {
     </div>
   </div>
 
+  <h2>Agent findings</h2>
+  <ul>${(record.analysis?.agents || []).map((agent) =>
+    `<li><strong>${agent.name}</strong> <em>(${agent.role})</em><br>${agent.finding}</li>`
+  ).join("") || "<li>No agent findings recorded.</li>"}</ul>
+
   <h2>Evidence reviewed</h2>
   <ul>${evidenceRows || "<li>No retrieved evidence recorded.</li>"}</ul>
 
@@ -637,6 +709,7 @@ export default function Home() {
 
           <TabsTrigger
             value="prior-data"
+            onClick={loadKnowledgeDocuments}
             className="px-4 pb-3 text-slate-400 data-[state=active]:text-cyan-200"
           >
             Prior Incident Data &amp; Data Models
@@ -738,7 +811,7 @@ export default function Home() {
                     accept=".pdf,.doc,.docx,.txt,.md,.csv,.json,.yaml,.yml"
                     className="sr-only"
                     onChange={(event) => {
-                      addPriorFiles(event.target.files);
+                      void uploadPriorFiles(event.target.files);
                       event.currentTarget.value = "";
                     }}
                   />
@@ -1221,17 +1294,26 @@ export default function Home() {
                   accept=".pdf,.doc,.docx,.txt,.md,.csv,.json,.yaml,.yml"
                   className="sr-only"
                   onChange={(event) => {
-                    addPriorFiles(event.target.files);
+                    void uploadPriorFiles(event.target.files);
                     event.currentTarget.value = "";
                   }}
                 />
               </label>
 
-              <div className="mt-4 rounded-lg border border-amber-300/15 bg-amber-300/[0.05] p-3 text-xs leading-5 text-amber-100/70">
-                Files are currently staged in this browser
-                UI. Persistent binary document ingestion
-                into Neon/pgvector is the next backend
-                endpoint.
+              <div className={`mt-4 rounded-lg border p-3 text-xs leading-5 ${
+                knowledgeUploadState === "error"
+                  ? "border-red-300/20 bg-red-300/[0.05] text-red-200"
+                  : "border-emerald-300/20 bg-emerald-300/[0.05] text-emerald-100/80"
+              }`}>
+                <div className="flex items-center gap-2">
+                  {knowledgeUploadState === "uploading" && (
+                    <LoaderCircle className="size-4 animate-spin" />
+                  )}
+                  <span>
+                    {knowledgeMessage ||
+                      "Uploaded evidence is stored in Neon, chunked, embedded, and indexed in pgvector for future incident retrieval."}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -1239,55 +1321,48 @@ export default function Home() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="eyebrow">
-                    STAGED KNOWLEDGE
+                    PERSISTENT KNOWLEDGE
                   </div>
                   <h2 className="mt-2 text-lg font-semibold">
-                    Ready for ingestion
+                    Indexed in Neon / pgvector
                   </h2>
                 </div>
 
                 <span className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 font-mono text-xs text-slate-400">
-                  {priorFiles.length} FILES
+                  {knowledgeDocuments.length} DOCS
                 </span>
               </div>
 
               <div className="mt-5 grid gap-2">
-                {priorFiles.length ? (
-                  priorFiles.map((file, index) => (
+                {knowledgeDocuments.length ? (
+                  knowledgeDocuments.map((doc) => (
                     <div
-                      key={`${file.name}-${file.lastModified}-${index}`}
+                      key={doc.id}
                       className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.025] p-3"
                     >
-                      <div className="grid size-9 shrink-0 place-items-center rounded-lg border border-white/10 bg-black/20 text-cyan-200">
-                        <FileText className="size-4" />
+                      <div className="grid size-9 shrink-0 place-items-center rounded-lg border border-emerald-300/15 bg-emerald-300/[0.05] text-emerald-200">
+                        <Database className="size-4" />
                       </div>
 
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-medium text-slate-200">
-                          {file.name}
+                          {doc.filename}
                         </div>
-
                         <div className="mt-1 text-xs text-slate-600">
-                          {Math.round(file.size / 1024)} KB
-                          · staged locally
+                          {doc.doc_type} · {doc.chunk_count} chunks · indexed{" "}
+                          {new Date(doc.created_at).toLocaleString()}
                         </div>
                       </div>
 
-                      <button
-                        onClick={() =>
-                          removePriorFile(index)
-                        }
-                        className="rounded-md p-2 text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
-                        aria-label={`Remove ${file.name}`}
-                      >
-                        <X className="size-4" />
-                      </button>
+                      <span className="rounded-full border border-emerald-300/20 bg-emerald-300/[0.05] px-2 py-1 text-[10px] font-semibold tracking-wide text-emerald-200">
+                        INDEXED
+                      </span>
                     </div>
                   ))
                 ) : (
                   <div className="rounded-lg border border-dashed border-white/10 p-6 text-center text-sm leading-6 text-slate-500">
                     <Database className="mx-auto mb-3 size-5 text-slate-600" />
-                    No prior incident data staged yet.
+                    No uploaded knowledge indexed yet.
                   </div>
                 )}
               </div>
@@ -1478,6 +1553,53 @@ export default function Home() {
                           ?.evidence?.length || 0}{" "}
                         retrieved sources
                       </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 border-t border-white/10 pt-5">
+                    <div className="eyebrow">AGENT FINDINGS</div>
+                    <h3 className="mt-2 text-lg font-semibold">
+                      Full investigation comments
+                    </h3>
+
+                    <div className="mt-4 grid gap-2">
+                      {(selectedIncident.analysis?.agents || []).map(
+                        (agent, index) => {
+                          const icons = [Activity, Zap, Network, Eye, ShieldCheck];
+                          const Icon = icons[index % icons.length];
+
+                          return (
+                            <div
+                              key={`${agent.name}-${index}`}
+                              className="agent-row agent-row-active"
+                            >
+                              <div className="agent-icon">
+                                <Icon className="size-4" />
+                              </div>
+
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-baseline gap-x-2">
+                                  <span className="font-semibold text-white">
+                                    {agent.name}
+                                  </span>
+                                  <span className="text-xs text-slate-500">
+                                    {agent.role}
+                                  </span>
+                                </div>
+                                <p className="mt-1 text-sm leading-6 text-slate-400">
+                                  {agent.finding}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        }
+                      )}
+
+                      {!selectedIncident.analysis?.agents?.length && (
+                        <div className="rounded-lg border border-dashed border-white/10 p-4 text-sm text-slate-500">
+                          No agent findings were stored with this incident.
+                        </div>
+                      )}
                     </div>
                   </div>
                 </>

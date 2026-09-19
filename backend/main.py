@@ -8,13 +8,13 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from psycopg.types.json import Jsonb
 
 from agentic import autogen_runner, crewai_runner, langgraph_runner
-from agentic.retrieval import retrieve
+from agentic.retrieval import ingest_uploaded_document, list_uploaded_documents, retrieve
 
 app = FastAPI(title="Agentic Incident Lab API", version="1.1.0")
 app.add_middleware(
@@ -326,6 +326,49 @@ async def update_incident(incident_id: str, payload: IncidentUpdateRequest) -> d
         raise
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/knowledge/upload")
+async def upload_knowledge(
+    file: UploadFile = File(...),
+    doc_type: str = Form("INCIDENT_EVIDENCE"),
+    incident_id: str | None = Form(None),
+) -> dict[str, Any]:
+    try:
+        raw = await file.read()
+        if not raw:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+        if len(raw) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File exceeds the 10 MB limit")
+
+        return await asyncio.to_thread(
+            ingest_uploaded_document,
+            filename=file.filename or "uploaded-document",
+            content_type=file.content_type or "application/octet-stream",
+            raw=raw,
+            doc_type=doc_type,
+            incident_id=incident_id,
+        )
+    except HTTPException:
+        raise
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+
+
+@app.get("/api/knowledge")
+async def knowledge_documents() -> list[dict[str, Any]]:
+    try:
+        return await asyncio.to_thread(list_uploaded_documents)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
 
 
 @app.get("/health")
