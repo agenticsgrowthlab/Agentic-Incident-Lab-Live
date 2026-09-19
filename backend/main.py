@@ -5,20 +5,22 @@ import os
 import time
 import traceback
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from psycopg.types.json import Jsonb
 
 from agentic import autogen_runner, crewai_runner, langgraph_runner
 from agentic.retrieval import retrieve
 
-app = FastAPI(title="Agentic Incident Lab API", version="1.0.0")
+app = FastAPI(title="Agentic Incident Lab API", version="1.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
 
@@ -26,6 +28,91 @@ app.add_middleware(
 class AnalysisRequest(BaseModel):
     framework: Literal["LangGraph", "CrewAI", "AutoGen"] = "LangGraph"
     incident: str = Field(min_length=20, max_length=4000)
+
+
+class IncidentSaveRequest(BaseModel):
+    incident_name: str = Field(min_length=3, max_length=160)
+    incident_text: str = Field(min_length=20, max_length=12000)
+    severity: str = Field(default="SEV-2", max_length=30)
+    status: str = Field(default="Investigating", max_length=40)
+    framework: Literal["LangGraph", "CrewAI", "AutoGen"]
+    analysis: dict[str, Any]
+    human_approved: bool = False
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+    final_root_cause: str | None = None
+    resolution: str | None = None
+    lessons_learned: str | None = None
+
+
+class IncidentUpdateRequest(BaseModel):
+    incident_name: str | None = Field(default=None, min_length=3, max_length=160)
+    incident_text: str | None = Field(default=None, min_length=20, max_length=12000)
+    severity: str | None = Field(default=None, max_length=30)
+    status: str | None = Field(default=None, max_length=40)
+    framework: Literal["LangGraph", "CrewAI", "AutoGen"] | None = None
+    analysis: dict[str, Any] | None = None
+    human_approved: bool | None = None
+    attachments: list[dict[str, Any]] | None = None
+    final_root_cause: str | None = None
+    resolution: str | None = None
+    lessons_learned: str | None = None
+
+
+def _database_url() -> str:
+    value = os.getenv("DATABASE_URL")
+    if not value:
+        raise RuntimeError("DATABASE_URL is not configured")
+    return value
+
+
+def _ensure_incident_table() -> None:
+    import psycopg
+
+    with psycopg.connect(_database_url(), autocommit=True) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS incident_records (
+                    id text PRIMARY KEY,
+                    incident_name text NOT NULL,
+                    incident_text text NOT NULL,
+                    severity text NOT NULL,
+                    status text NOT NULL,
+                    framework text NOT NULL,
+                    analysis jsonb NOT NULL,
+                    human_approved boolean NOT NULL DEFAULT false,
+                    attachments jsonb NOT NULL DEFAULT '[]'::jsonb,
+                    final_root_cause text,
+                    resolution text,
+                    lessons_learned text,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    updated_at timestamptz NOT NULL DEFAULT now()
+                )
+                """
+            )
+
+
+def _incident_id() -> str:
+    return f"INC-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:5].upper()}"
+
+
+def _incident_row(row: tuple[Any, ...]) -> dict[str, Any]:
+    return {
+        "id": row[0],
+        "incident_name": row[1],
+        "incident_text": row[2],
+        "severity": row[3],
+        "status": row[4],
+        "framework": row[5],
+        "analysis": row[6],
+        "human_approved": row[7],
+        "attachments": row[8] or [],
+        "final_root_cause": row[9],
+        "resolution": row[10],
+        "lessons_learned": row[11],
+        "created_at": row[12].isoformat() if row[12] else None,
+        "updated_at": row[13].isoformat() if row[13] else None,
+    }
 
 
 def _public_evidence(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -78,6 +165,7 @@ async def health() -> dict[str, Any]:
         "status": "ready" if os.getenv("OPENAI_API_KEY") else "configuration_required",
         "configured": bool(os.getenv("OPENAI_API_KEY")),
         "vector_database_configured": bool(os.getenv("DATABASE_URL")),
+        "incident_store_configured": bool(os.getenv("DATABASE_URL")),
         "frameworks": ["LangGraph", "CrewAI", "AutoGen"],
     }
 
@@ -91,6 +179,153 @@ async def run_analysis(payload: AnalysisRequest) -> dict[str, Any]:
     except Exception as exc:
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+
+
+@app.post("/api/incidents")
+async def save_incident(payload: IncidentSaveRequest) -> dict[str, Any]:
+    try:
+        import psycopg
+
+        _ensure_incident_table()
+        incident_id = _incident_id()
+        with psycopg.connect(_database_url(), autocommit=True) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO incident_records
+                    (id, incident_name, incident_text, severity, status, framework, analysis,
+                     human_approved, attachments, final_root_cause, resolution, lessons_learned)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    RETURNING id, incident_name, incident_text, severity, status, framework,
+                              analysis, human_approved, attachments, final_root_cause,
+                              resolution, lessons_learned, created_at, updated_at
+                    """,
+                    (
+                        incident_id,
+                        payload.incident_name,
+                        payload.incident_text,
+                        payload.severity,
+                        payload.status,
+                        payload.framework,
+                        Jsonb(payload.analysis),
+                        payload.human_approved,
+                        Jsonb(payload.attachments),
+                        payload.final_root_cause,
+                        payload.resolution,
+                        payload.lessons_learned,
+                    ),
+                )
+                return _incident_row(cursor.fetchone())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+
+
+@app.get("/api/incidents")
+async def list_incidents() -> list[dict[str, Any]]:
+    try:
+        import psycopg
+
+        _ensure_incident_table()
+        with psycopg.connect(_database_url(), autocommit=True) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, incident_name, incident_text, severity, status, framework,
+                           analysis, human_approved, attachments, final_root_cause,
+                           resolution, lessons_learned, created_at, updated_at
+                    FROM incident_records
+                    ORDER BY created_at DESC
+                    LIMIT 250
+                    """
+                )
+                return [_incident_row(row) for row in cursor.fetchall()]
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/api/incidents/{incident_id}")
+async def get_incident(incident_id: str) -> dict[str, Any]:
+    try:
+        import psycopg
+
+        _ensure_incident_table()
+        with psycopg.connect(_database_url(), autocommit=True) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, incident_name, incident_text, severity, status, framework,
+                           analysis, human_approved, attachments, final_root_cause,
+                           resolution, lessons_learned, created_at, updated_at
+                    FROM incident_records WHERE id=%s
+                    """,
+                    (incident_id,),
+                )
+                row = cursor.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Incident not found")
+                return _incident_row(row)
+    except HTTPException:
+        raise
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.patch("/api/incidents/{incident_id}")
+async def update_incident(incident_id: str, payload: IncidentUpdateRequest) -> dict[str, Any]:
+    try:
+        import psycopg
+
+        _ensure_incident_table()
+        updates = payload.model_dump(exclude_unset=True)
+        if not updates:
+            return await get_incident(incident_id)
+
+        column_map = {
+            "incident_name": "incident_name",
+            "incident_text": "incident_text",
+            "severity": "severity",
+            "status": "status",
+            "framework": "framework",
+            "analysis": "analysis",
+            "human_approved": "human_approved",
+            "attachments": "attachments",
+            "final_root_cause": "final_root_cause",
+            "resolution": "resolution",
+            "lessons_learned": "lessons_learned",
+        }
+        assignments: list[str] = []
+        values: list[Any] = []
+        for key, value in updates.items():
+            assignments.append(f"{column_map[key]}=%s")
+            if key in {"analysis", "attachments"} and value is not None:
+                value = Jsonb(value)
+            values.append(value)
+        assignments.append("updated_at=now()")
+        values.append(incident_id)
+
+        with psycopg.connect(_database_url(), autocommit=True) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    UPDATE incident_records SET {", ".join(assignments)}
+                    WHERE id=%s
+                    RETURNING id, incident_name, incident_text, severity, status, framework,
+                              analysis, human_approved, attachments, final_root_cause,
+                              resolution, lessons_learned, created_at, updated_at
+                    """,
+                    values,
+                )
+                row = cursor.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Incident not found")
+                return _incident_row(row)
+    except HTTPException:
+        raise
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.get("/health")
