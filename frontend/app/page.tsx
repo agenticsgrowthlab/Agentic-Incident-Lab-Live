@@ -17,6 +17,7 @@ import {
   FileSearch,
   FileText,
   LoaderCircle,
+  MessageCircle,
   GitBranch,
   LockKeyhole,
   Network,
@@ -24,6 +25,7 @@ import {
   Printer,
   RefreshCcw,
   Save,
+  Send,
   ShieldCheck,
   Sparkles,
   Timer,
@@ -121,10 +123,43 @@ type KnowledgeDocument = {
   status: string;
 };
 
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+  incident_matches?: { id: string; name: string; created_at: string; rail?: string }[];
+};
+
+type WizardData = {
+  rail: string;
+  otherRail: string;
+  symptom: string;
+  startedAt: string;
+  affectedCount: string;
+  failureRate: string;
+  recentChange: string;
+  errorDetails: string;
+  customerImpact: string;
+  queueState: string;
+  retryState: string;
+  actionsTaken: string;
+};
+
 const API_URL = process.env.NEXT_PUBLIC_AGENT_API_URL || "/api/analyze";
 
 const DEFAULT_INCIDENT =
   "ACH payments are failing intermittently. Processor timeouts rose after the 14:02 deployment. Failure rate is 18.4%, 1,842 payment instructions are affected, retry volume is 6.2× normal, and the oldest queued message is 47 minutes old. Some customers have attempted payment more than once.";
+
+const PAYMENT_RAIL_OPTIONS = [
+  "ACH",
+  "Wire / Fedwire",
+  "FedNow",
+  "RTP (The Clearing House)",
+  "Cross-Border / International FX",
+  "Debit Card Processing",
+  "Credit Card Processing",
+  "Zelle / P2P",
+  "Other",
+] as const;
 
 const frameworkCopy: Record<
   Framework,
@@ -241,6 +276,153 @@ export default function Home() {
   const [knowledgeUploadState, setKnowledgeUploadState] =
     useState<"idle" | "uploading" | "indexed" | "error">("idle");
   const [knowledgeMessage, setKnowledgeMessage] = useState<string | null>(null);
+
+  const [activeTab, setActiveTab] = useState("incident");
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState(0);
+  const [wizardData, setWizardData] = useState<WizardData>({
+    rail: "ACH",
+    otherRail: "",
+    symptom: "",
+    startedAt: "",
+    affectedCount: "",
+    failureRate: "",
+    recentChange: "",
+    errorDetails: "",
+    customerImpact: "",
+    queueState: "",
+    retryState: "",
+    actionsTaken: "",
+  });
+
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    {
+      role: "assistant",
+      content:
+        "I’m Chatty. I can read the current incident context, saved incidents in Neon, and indexed incident evidence. Ask me what to check next or whether this has happened before.",
+    },
+  ]);
+
+  const selectedRail =
+    wizardData.rail === "Other"
+      ? wizardData.otherRail.trim() || "Other payment rail"
+      : wizardData.rail;
+
+  const wizardSummary = () => {
+    const lines = [
+      `Payment rail / service: ${selectedRail}.`,
+      wizardData.symptom && `Observed behavior: ${wizardData.symptom}.`,
+      wizardData.startedAt && `Incident began: ${wizardData.startedAt}.`,
+      wizardData.affectedCount && `Affected transactions/customers: ${wizardData.affectedCount}.`,
+      wizardData.failureRate && `Observed failure rate: ${wizardData.failureRate}.`,
+      wizardData.recentChange && `Recent change/deployment/configuration: ${wizardData.recentChange}.`,
+      wizardData.errorDetails && `Errors / response codes / processor messages: ${wizardData.errorDetails}.`,
+      wizardData.customerImpact && `Customer/member impact: ${wizardData.customerImpact}.`,
+      wizardData.queueState && `Queue / settlement / acknowledgment state: ${wizardData.queueState}.`,
+      wizardData.retryState && `Retry / duplicate behavior: ${wizardData.retryState}.`,
+      wizardData.actionsTaken && `Actions already taken: ${wizardData.actionsTaken}.`,
+    ].filter(Boolean);
+
+    return lines.join(" ");
+  };
+
+  const finishWizard = () => {
+    const summary = wizardSummary();
+    setIncident(summary);
+    setIncidentName(
+      `${selectedRail} - ${wizardData.symptom.trim() || "Payment Incident"}`.slice(
+        0,
+        120
+      )
+    );
+    setResult(null);
+    setSavedIncidentId(null);
+    setWizardOpen(false);
+    setWizardStep(0);
+    setActiveTab("incident");
+  };
+
+  const sendChat = async () => {
+    const message = chatInput.trim();
+    if (!message || chatBusy) return;
+
+    const nextMessages: ChatMessage[] = [
+      ...chatMessages,
+      { role: "user", content: message },
+    ];
+    setChatMessages(nextMessages);
+    setChatInput("");
+    setChatBusy(true);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          screen_context: {
+            active_tab: activeTab,
+            incident_name: incidentName,
+            incident_text: incident,
+            severity,
+            framework,
+            current_analysis: result,
+            selected_incident: selectedIncident,
+            saved_incident_id: savedIncidentId,
+          },
+          history: nextMessages.slice(-8).map(({ role, content }) => ({
+            role,
+            content,
+          })),
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(String(payload.detail || "Chatty could not respond"));
+      }
+
+      setChatMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content: String(payload.answer || "No answer returned."),
+          incident_matches: payload.incident_matches || [],
+        },
+      ]);
+    } catch (cause) {
+      setChatMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content:
+            cause instanceof Error
+              ? `I hit an error: ${cause.message}`
+              : "I hit an unexpected error.",
+        },
+      ]);
+    } finally {
+      setChatBusy(false);
+    }
+  };
+
+  const openIncidentFromChat = async (incidentId: string) => {
+    try {
+      const response = await fetch(`/api/incidents/${incidentId}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+      const record = (await response.json()) as IncidentRecord;
+      setSelectedIncident(record);
+      setActiveTab("history");
+      setChatOpen(false);
+    } catch {
+      // Keep Chatty open if the record could not be loaded.
+    }
+  };
 
   const inferDocType = (filename: string) => {
     const lower = filename.toLowerCase();
@@ -692,8 +874,35 @@ export default function Home() {
         </div>
       </header>
 
+      <div className="mx-auto mt-4 max-w-[1500px] px-4 lg:px-8">
+        <button
+          type="button"
+          onClick={() => {
+            setWizardStep(0);
+            setWizardOpen(true);
+          }}
+          className="flex w-full items-center justify-between rounded-xl border border-amber-300/30 bg-amber-300/[0.08] px-4 py-3 text-left transition hover:bg-amber-300/[0.12]"
+        >
+          <div className="flex items-center gap-3">
+            <div className="grid size-9 place-items-center rounded-lg border border-amber-300/25 bg-amber-300/[0.08] text-amber-200">
+              <AlertTriangle className="size-4" />
+            </div>
+            <div>
+              <div className="text-sm font-bold tracking-wide text-amber-100">
+                START HERE
+              </div>
+              <div className="mt-0.5 text-xs text-amber-100/65">
+                Guided incident intake — capture the right payment details without having to remember the process.
+              </div>
+            </div>
+          </div>
+          <ChevronRight className="size-4 text-amber-200" />
+        </button>
+      </div>
+
       <Tabs
-        defaultValue="incident"
+        value={activeTab}
+        onValueChange={setActiveTab}
         className="mx-auto max-w-[1500px] gap-0 px-4 pb-12 pt-5 lg:px-8"
       >
         <TabsList
@@ -2003,6 +2212,382 @@ export default function Home() {
           </section>
         </TabsContent>
       </Tabs>
+
+      {wizardOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-2xl border border-amber-300/20 bg-[#08101b] shadow-2xl">
+            <div className="flex items-start justify-between border-b border-white/10 p-5">
+              <div>
+                <div className="eyebrow text-amber-200">START HERE</div>
+                <h2 className="mt-2 text-xl font-semibold text-white">
+                  Guided payment incident intake
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Step {wizardStep + 1} of 4 · We’ll write the incident description for you.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWizardOpen(false)}
+                className="rounded-lg border border-white/10 p-2 text-slate-500 hover:text-white"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="p-5">
+              {wizardStep === 0 && (
+                <div className="grid gap-4">
+                  <label className="grid gap-2 text-sm text-slate-300">
+                    Which payment rail or service is affected?
+                    <select
+                      value={wizardData.rail}
+                      onChange={(event) =>
+                        setWizardData((current) => ({
+                          ...current,
+                          rail: event.target.value,
+                        }))
+                      }
+                      className="rounded-lg border border-white/10 bg-slate-950 px-3 py-3 text-slate-200 outline-none focus:border-amber-300/40"
+                    >
+                      {PAYMENT_RAIL_OPTIONS.map((rail) => (
+                        <option key={rail} value={rail}>
+                          {rail}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {wizardData.rail === "Other" && (
+                    <label className="grid gap-2 text-sm text-slate-300">
+                      Other rail / processor / service
+                      <input
+                        value={wizardData.otherRail}
+                        onChange={(event) =>
+                          setWizardData((current) => ({
+                            ...current,
+                            otherRail: event.target.value,
+                          }))
+                        }
+                        className="rounded-lg border border-white/10 bg-slate-950 px-3 py-3 text-slate-200 outline-none focus:border-amber-300/40"
+                        placeholder="e.g., a specific processor or correspondent service"
+                      />
+                    </label>
+                  )}
+
+                  <label className="grid gap-2 text-sm text-slate-300">
+                    What is failing or behaving abnormally?
+                    <textarea
+                      value={wizardData.symptom}
+                      onChange={(event) =>
+                        setWizardData((current) => ({
+                          ...current,
+                          symptom: event.target.value,
+                        }))
+                      }
+                      rows={4}
+                      className="rounded-lg border border-white/10 bg-slate-950 px-3 py-3 text-slate-200 outline-none focus:border-amber-300/40"
+                      placeholder="Timeouts, rejects, duplicate payments, delayed acknowledgments, posting failures..."
+                    />
+                  </label>
+                </div>
+              )}
+
+              {wizardStep === 1 && (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="grid gap-2 text-sm text-slate-300">
+                    When did it start?
+                    <input
+                      value={wizardData.startedAt}
+                      onChange={(event) =>
+                        setWizardData((current) => ({
+                          ...current,
+                          startedAt: event.target.value,
+                        }))
+                      }
+                      className="rounded-lg border border-white/10 bg-slate-950 px-3 py-3 text-slate-200 outline-none focus:border-amber-300/40"
+                      placeholder="14:02 PT / after release 3.4"
+                    />
+                  </label>
+
+                  <label className="grid gap-2 text-sm text-slate-300">
+                    How many are affected?
+                    <input
+                      value={wizardData.affectedCount}
+                      onChange={(event) =>
+                        setWizardData((current) => ({
+                          ...current,
+                          affectedCount: event.target.value,
+                        }))
+                      }
+                      className="rounded-lg border border-white/10 bg-slate-950 px-3 py-3 text-slate-200 outline-none focus:border-amber-300/40"
+                      placeholder="1,842 instructions / 327 members"
+                    />
+                  </label>
+
+                  <label className="grid gap-2 text-sm text-slate-300">
+                    Failure / delay rate
+                    <input
+                      value={wizardData.failureRate}
+                      onChange={(event) =>
+                        setWizardData((current) => ({
+                          ...current,
+                          failureRate: event.target.value,
+                        }))
+                      }
+                      className="rounded-lg border border-white/10 bg-slate-950 px-3 py-3 text-slate-200 outline-none focus:border-amber-300/40"
+                      placeholder="18.4% / 22 minutes"
+                    />
+                  </label>
+
+                  <label className="grid gap-2 text-sm text-slate-300">
+                    Recent change, deploy, config, certificate?
+                    <input
+                      value={wizardData.recentChange}
+                      onChange={(event) =>
+                        setWizardData((current) => ({
+                          ...current,
+                          recentChange: event.target.value,
+                        }))
+                      }
+                      className="rounded-lg border border-white/10 bg-slate-950 px-3 py-3 text-slate-200 outline-none focus:border-amber-300/40"
+                      placeholder="API release at 14:02 / none known"
+                    />
+                  </label>
+                </div>
+              )}
+
+              {wizardStep === 2 && (
+                <div className="grid gap-4">
+                  <label className="grid gap-2 text-sm text-slate-300">
+                    Errors, rejects, processor responses, or codes
+                    <textarea
+                      value={wizardData.errorDetails}
+                      onChange={(event) =>
+                        setWizardData((current) => ({
+                          ...current,
+                          errorDetails: event.target.value,
+                        }))
+                      }
+                      rows={3}
+                      className="rounded-lg border border-white/10 bg-slate-950 px-3 py-3 text-slate-200 outline-none focus:border-amber-300/40"
+                    />
+                  </label>
+
+                  <label className="grid gap-2 text-sm text-slate-300">
+                    Queue, settlement, acknowledgment, or posting state
+                    <textarea
+                      value={wizardData.queueState}
+                      onChange={(event) =>
+                        setWizardData((current) => ({
+                          ...current,
+                          queueState: event.target.value,
+                        }))
+                      }
+                      rows={3}
+                      className="rounded-lg border border-white/10 bg-slate-950 px-3 py-3 text-slate-200 outline-none focus:border-amber-300/40"
+                      placeholder="Oldest queued item, settlement status, ACK/NACK behavior..."
+                    />
+                  </label>
+
+                  <label className="grid gap-2 text-sm text-slate-300">
+                    Retry or duplicate behavior
+                    <input
+                      value={wizardData.retryState}
+                      onChange={(event) =>
+                        setWizardData((current) => ({
+                          ...current,
+                          retryState: event.target.value,
+                        }))
+                      }
+                      className="rounded-lg border border-white/10 bg-slate-950 px-3 py-3 text-slate-200 outline-none focus:border-amber-300/40"
+                      placeholder="Retries 6.2× normal / duplicate submissions observed"
+                    />
+                  </label>
+                </div>
+              )}
+
+              {wizardStep === 3 && (
+                <div className="grid gap-4">
+                  <label className="grid gap-2 text-sm text-slate-300">
+                    Customer / member impact
+                    <textarea
+                      value={wizardData.customerImpact}
+                      onChange={(event) =>
+                        setWizardData((current) => ({
+                          ...current,
+                          customerImpact: event.target.value,
+                        }))
+                      }
+                      rows={3}
+                      className="rounded-lg border border-white/10 bg-slate-950 px-3 py-3 text-slate-200 outline-none focus:border-amber-300/40"
+                    />
+                  </label>
+
+                  <label className="grid gap-2 text-sm text-slate-300">
+                    What has already been tried?
+                    <textarea
+                      value={wizardData.actionsTaken}
+                      onChange={(event) =>
+                        setWizardData((current) => ({
+                          ...current,
+                          actionsTaken: event.target.value,
+                        }))
+                      }
+                      rows={3}
+                      className="rounded-lg border border-white/10 bg-slate-950 px-3 py-3 text-slate-200 outline-none focus:border-amber-300/40"
+                      placeholder="Paused retries, rolled back config, contacted processor..."
+                    />
+                  </label>
+
+                  <div className="rounded-xl border border-cyan-300/15 bg-cyan-300/[0.04] p-4">
+                    <div className="eyebrow">PREVIEW</div>
+                    <p className="mt-2 text-sm leading-6 text-slate-300">
+                      {wizardSummary() || "Complete the intake questions to build the incident summary."}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-white/10 p-5">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={wizardStep === 0}
+                onClick={() => setWizardStep((step) => Math.max(0, step - 1))}
+              >
+                Back
+              </Button>
+
+              {wizardStep < 3 ? (
+                <Button
+                  type="button"
+                  onClick={() => setWizardStep((step) => Math.min(3, step + 1))}
+                  disabled={
+                    wizardStep === 0 &&
+                    (!wizardData.symptom.trim() ||
+                      (wizardData.rail === "Other" &&
+                        !wizardData.otherRail.trim()))
+                  }
+                >
+                  Continue
+                  <ChevronRight className="ml-2 size-4" />
+                </Button>
+              ) : (
+                <Button type="button" onClick={finishWizard}>
+                  Use this incident
+                  <Check className="ml-2 size-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="fixed bottom-5 right-5 z-40">
+        {chatOpen ? (
+          <div className="flex h-[560px] w-[390px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-cyan-300/20 bg-[#08101b] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 bg-cyan-300/[0.04] px-4 py-3">
+              <div className="flex items-center gap-2">
+                <div className="grid size-8 place-items-center rounded-lg border border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-200">
+                  <MessageCircle className="size-4" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-white">Chatty</div>
+                  <div className="text-[11px] text-slate-500">
+                    Current screen + Neon incident memory
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setChatOpen(false)}
+                className="rounded-lg p-2 text-slate-500 hover:text-white"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-3 overflow-y-auto p-4">
+              {chatMessages.map((message, index) => (
+                <div
+                  key={`${message.role}-${index}`}
+                  className={
+                    message.role === "user"
+                      ? "ml-10 rounded-xl bg-cyan-300/10 p-3 text-sm leading-6 text-cyan-50"
+                      : "mr-6 rounded-xl border border-white/10 bg-white/[0.025] p-3 text-sm leading-6 text-slate-300"
+                  }
+                >
+                  <div>{message.content}</div>
+
+                  {!!message.incident_matches?.length && (
+                    <div className="mt-3 grid gap-2">
+                      {message.incident_matches.map((match) => (
+                        <button
+                          type="button"
+                          key={match.id}
+                          onClick={() => void openIncidentFromChat(match.id)}
+                          className="rounded-lg border border-cyan-300/15 bg-cyan-300/[0.04] p-2 text-left transition hover:bg-cyan-300/[0.08]"
+                        >
+                          <div className="text-xs font-semibold text-cyan-200">
+                            {match.name}
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-500">
+                            {match.id} · {new Date(match.created_at).toLocaleString()}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {chatBusy && (
+                <div className="mr-6 flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3 text-sm text-slate-500">
+                  <LoaderCircle className="size-4 animate-spin" />
+                  Reading the incident and Neon history…
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-white/10 p-3">
+              <div className="flex gap-2">
+                <textarea
+                  value={chatInput}
+                  onChange={(event) => setChatInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void sendChat();
+                    }
+                  }}
+                  rows={2}
+                  className="min-h-12 flex-1 resize-none rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-300/30"
+                  placeholder='Ask “Has this happened before?”'
+                />
+                <Button
+                  type="button"
+                  size="icon"
+                  onClick={() => void sendChat()}
+                  disabled={chatBusy || !chatInput.trim()}
+                >
+                  <Send className="size-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setChatOpen(true)}
+            className="flex items-center gap-2 rounded-full border border-cyan-300/25 bg-[#0b1726] px-4 py-3 text-sm font-semibold text-cyan-100 shadow-2xl transition hover:bg-cyan-300/[0.08]"
+          >
+            <MessageCircle className="size-4" />
+            Ask Chatty
+          </button>
+        )}
+      </div>
     </main>
   );
 }

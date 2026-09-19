@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from psycopg.types.json import Jsonb
 
 from agentic import autogen_runner, crewai_runner, langgraph_runner
+from agentic.core import client
 from agentic.retrieval import ingest_uploaded_document, list_uploaded_documents, retrieve
 
 app = FastAPI(title="Agentic Incident Lab API", version="1.1.0")
@@ -28,6 +29,12 @@ app.add_middleware(
 class AnalysisRequest(BaseModel):
     framework: Literal["LangGraph", "CrewAI", "AutoGen"] = "LangGraph"
     incident: str = Field(min_length=20, max_length=4000)
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    screen_context: dict[str, Any] = Field(default_factory=dict)
+    history: list[dict[str, str]] = Field(default_factory=list)
 
 
 class IncidentSaveRequest(BaseModel):
@@ -364,6 +371,164 @@ async def upload_knowledge(
 async def knowledge_documents() -> list[dict[str, Any]]:
     try:
         return await asyncio.to_thread(list_uploaded_documents)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+
+
+def _recent_incidents_for_chat(limit: int = 40) -> list[dict[str, Any]]:
+    import psycopg
+
+    _ensure_incident_table()
+    with psycopg.connect(_database_url(), autocommit=True) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, incident_name, incident_text, severity, status, framework,
+                       analysis, human_approved, attachments, final_root_cause,
+                       resolution, lessons_learned, created_at, updated_at
+                FROM incident_records
+                ORDER BY updated_at DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            return [_incident_row(row) for row in cursor.fetchall()]
+
+
+def _incident_match_score(query: str, incident: dict[str, Any]) -> int:
+    query_tokens = {
+        token.lower()
+        for token in query.replace("/", " ").replace("-", " ").split()
+        if len(token) >= 3
+    }
+    haystack = " ".join(
+        [
+            incident.get("incident_name") or "",
+            incident.get("incident_text") or "",
+            incident.get("severity") or "",
+            str((incident.get("analysis") or {}).get("recommendation") or ""),
+        ]
+    ).lower()
+    return sum(1 for token in query_tokens if token in haystack)
+
+
+@app.post("/api/chat")
+async def chat_with_incident_lab(payload: ChatRequest) -> dict[str, Any]:
+    try:
+        incidents = await asyncio.to_thread(_recent_incidents_for_chat)
+
+        current_text = " ".join(
+            [
+                str(payload.screen_context.get("incident_name") or ""),
+                str(payload.screen_context.get("incident_text") or ""),
+                payload.message,
+            ]
+        )
+        ranked = sorted(
+            incidents,
+            key=lambda item: _incident_match_score(current_text, item),
+            reverse=True,
+        )
+        matches = [
+            item for item in ranked
+            if _incident_match_score(current_text, item) > 0
+        ][:5]
+
+        # Retrieve indexed RCA/data-model/knowledge evidence using the current incident + question.
+        evidence, retrieval_mode, retrieval_notice = await asyncio.to_thread(
+            retrieve, current_text[:4000]
+        )
+
+        incident_context = [
+            {
+                "id": item["id"],
+                "incident_name": item["incident_name"],
+                "incident_text": item["incident_text"],
+                "severity": item["severity"],
+                "status": item["status"],
+                "framework": item["framework"],
+                "created_at": item["created_at"],
+                "updated_at": item["updated_at"],
+                "final_root_cause": item.get("final_root_cause"),
+                "resolution": item.get("resolution"),
+                "lessons_learned": item.get("lessons_learned"),
+                "recommendation": (item.get("analysis") or {}).get("recommendation"),
+                "agents": (item.get("analysis") or {}).get("agents", []),
+            }
+            for item in incidents[:25]
+        ]
+
+        evidence_context = [
+            {
+                "id": item["id"],
+                "title": item["title"],
+                "type": item["type"],
+                "score": round(float(item["score"]), 3),
+                "content": item["content"][:1800],
+            }
+            for item in evidence[:6]
+        ]
+
+        system_prompt = """
+You are Chatty, the live incident troubleshooting assistant inside Agentic Incident Lab.
+Your job is to help payment operations teams investigate safely under pressure.
+
+You can use:
+1. the user's current on-screen incident context,
+2. historical incidents from Neon,
+3. retrieved RCA/runbook/data-model evidence from Neon pgvector.
+
+Rules:
+- Be concise and operational.
+- Distinguish observed facts from hypotheses.
+- Never claim a past incident is the same unless the evidence supports it.
+- If asked "has this happened before?", identify the strongest historical match(es), explain why, and use their incident IDs.
+- Suggest the next 2-4 checks when troubleshooting.
+- Do not authorize or execute payment actions.
+- Do not invent processor responses, transaction states, or compliance facts.
+"""
+
+        user_payload = {
+            "question": payload.message,
+            "screen_context": payload.screen_context,
+            "recent_conversation": payload.history[-8:],
+            "historical_incidents": incident_context,
+            "retrieved_knowledge": evidence_context,
+            "retrieval_mode": retrieval_mode,
+            "retrieval_notice": retrieval_notice,
+        }
+
+        response = await asyncio.to_thread(
+            lambda: client().chat.completions.create(
+                model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": "Use this incident data to answer:\n"
+                        + str(user_payload),
+                    },
+                ],
+            )
+        )
+
+        answer = response.choices[0].message.content or "No response was generated."
+
+        return {
+            "answer": answer,
+            "incident_matches": [
+                {
+                    "id": item["id"],
+                    "name": item["incident_name"],
+                    "created_at": item["created_at"],
+                }
+                for item in matches
+            ],
+            "retrieval_mode": retrieval_mode,
+        }
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
