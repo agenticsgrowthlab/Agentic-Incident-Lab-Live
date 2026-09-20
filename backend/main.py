@@ -21,6 +21,7 @@ from ach_ai import router as ach_ai_router
 from rail_runbook import router as rail_runbook_router
 from governance import router as governance_router
 from payments_ops_ai import router as payments_ops_ai_router
+from prompt_registry import router as prompt_registry_router
 from multi_rail import router as multi_rail_router
 
 app = FastAPI(title="Agentic Incident Lab API", version="1.1.0")
@@ -29,6 +30,7 @@ app.include_router(ach_ai_router)
 app.include_router(rail_runbook_router)
 app.include_router(governance_router)
 app.include_router(payments_ops_ai_router)
+app.include_router(prompt_registry_router)
 app.include_router(multi_rail_router)
 app.add_middleware(
     CORSMiddleware,

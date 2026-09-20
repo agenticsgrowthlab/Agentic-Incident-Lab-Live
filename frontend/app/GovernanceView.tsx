@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import PromptRegistry from "./PromptRegistry";
 
 type Rail = "ach"|"fednow"|"fedwire"|"rtp";
 type ActivityRow = {
@@ -72,6 +73,7 @@ export default function GovernanceView({currentRail}:{currentRail?:Rail}) {
   const rows:ActivityRow[]=payload?.activity||[];
 
   return <section className="grid gap-4">
+    <PromptRegistry scope="platform" currentRail={currentRail}/>
     <div className="signal-card p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>

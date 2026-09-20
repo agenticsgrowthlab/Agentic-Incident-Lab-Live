@@ -39,6 +39,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import PromptRegistry from "./PromptRegistry";
 
 type Framework = "LangGraph" | "CrewAI" | "AutoGen";
 type RunState = "ready" | "running" | "complete" | "approved" | "error";
@@ -2100,6 +2101,7 @@ export default function Home() {
         </TabsContent>
 
         <TabsContent value="governance" className="pt-6">
+          <div className="mb-4"><PromptRegistry scope="incident" /></div>
           <section className="grid gap-4 lg:grid-cols-[.8fr_1.2fr]">
             <div className="signal-card p-5 sm:p-6">
               <div className="eyebrow">
