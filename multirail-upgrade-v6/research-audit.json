@@ -1,0 +1,25 @@
+{
+  "as_of": "2026-09-19",
+  "sources": [
+    {
+      "rail": "FedNow",
+      "source": "Federal Reserve Financial Services, FedNow Service Operating Procedures v3.6, effective 2026-04-28",
+      "url": "https://www.frbservices.org/binaries/content/assets/crsocms/resources/rules-regulations/042826-fednow-service-operating-procedures-redline.pdf"
+    },
+    {
+      "rail": "FedWire",
+      "source": "Federal Reserve Financial Services, Fedwire Funds Service ISO 20022 FAQ and format/technical FAQ",
+      "url": "https://www.frbservices.org/resources/financial-services/wires/faq/iso-20022"
+    },
+    {
+      "rail": "RTP",
+      "source": "The Clearing House, RTP Message Specification v5.0, June 2026, Appendix B",
+      "url": "https://www.theclearinghouse.org/payment-systems/rtp/document-library"
+    }
+  ],
+  "limitations": [
+    "FedNow's full implementation-guide code glossary is not unrestricted public documentation; only public codes/cases are modeled.",
+    "Fedwire's full Error Code Glossary is access-controlled in the Technical Guide; public examples/families are modeled and gated codes are not invented.",
+    "Message Test is a structural portfolio dry run, not operator/XSD certification."
+  ]
+}

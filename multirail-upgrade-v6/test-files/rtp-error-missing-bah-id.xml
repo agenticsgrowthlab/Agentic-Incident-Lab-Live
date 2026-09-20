@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Message xmlns="urn:agentics:synthetic">
+  <AppHdr>
+    <Fr><FIId><FinInstnId><ClrSysMmbId><MmbId>999999991</MmbId></ClrSysMmbId></FinInstnId></FIId></Fr>
+    <To><FIId><FinInstnId><ClrSysMmbId><MmbId>999999992</MmbId></ClrSysMmbId></FinInstnId></FIId></To>
+    
+    <MsgDefIdr>pacs.008.001.08</MsgDefIdr>
+    <CreDt>2026-09-19T21:00:00Z</CreDt>
+  </AppHdr>
+  <Document>
+    <FIToFICstmrCdtTrf>
+      <GrpHdr></GrpHdr>
+      <CdtTrfTxInf>
+        <PmtId><EndToEndId>E2E-TEMP</EndToEndId></PmtId>
+        <IntrBkSttlmAmt Ccy="USD">850.00</IntrBkSttlmAmt>
+      </CdtTrfTxInf>
+    </FIToFICstmrCdtTrf>
+  </Document>
+</Message>
