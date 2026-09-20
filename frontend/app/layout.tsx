@@ -711,10 +711,48 @@ export default function RootLayout({
     });
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', applyWorkspace);
-  } else {
+  function navigateWorkspace(url) {
+    window.history.pushState({}, '', url);
     applyWorkspace();
+  }
+
+  function bindNavigation() {
+    var ids = [
+      'workspace-incident-link',
+      'workspace-platform-link',
+      'rail-link-ach',
+      'rail-link-fednow',
+      'rail-link-fedwire',
+      'rail-link-rtp',
+      'scenario-pill-healthy',
+      'scenario-pill-watch',
+      'scenario-pill-critical'
+    ];
+
+    ids.forEach(function (id) {
+      var link = document.getElementById(id);
+      if (!link || link.dataset.workspaceBound === 'true') return;
+      link.dataset.workspaceBound = 'true';
+      link.addEventListener('click', function (event) {
+        var href = link.getAttribute('href');
+        if (!href) return;
+        event.preventDefault();
+        navigateWorkspace(href);
+      });
+    });
+  }
+
+  function initializeWorkspace() {
+    applyWorkspace();
+    bindNavigation();
+  }
+
+  window.addEventListener('popstate', applyWorkspace);
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeWorkspace);
+  } else {
+    initializeWorkspace();
   }
 })();
             `,
