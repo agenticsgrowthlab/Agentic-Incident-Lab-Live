@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import ACHOpsAI from "./ACHOpsAI";
 import ACHDailyRunbook from "./ACHDailyRunbook";
+import GovernanceView from "./GovernanceView";
 
 type Scenario = {
   id: "healthy" | "watch" | "critical";
@@ -140,7 +141,7 @@ export default function PlatformScenarioView({ scenario }: { scenario: Scenario 
   const [detail, setDetail] = useState<TransactionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "use-cases" | "preflight" | "runbook">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "use-cases" | "preflight" | "runbook" | "governance">("dashboard");
   const [failureLab, setFailureLab] = useState<FailureLabResponse | null>(null);
   const [returnCodes, setReturnCodes] = useState<ReturnCodeResponse | null>(null);
   const [resetting, setResetting] = useState(false);
@@ -394,6 +395,17 @@ export default function PlatformScenarioView({ scenario }: { scenario: Scenario 
           >
             Daily Run Book
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("governance")}
+            className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
+              activeTab === "governance"
+                ? "bg-violet-300/10 text-violet-200 ring-1 ring-violet-300/25"
+                : "text-slate-500 hover:bg-white/[0.04] hover:text-slate-300"
+            }`}
+          >
+            Governance
+          </button>
         </div>
 
         <div className="flex items-center gap-3">
@@ -409,7 +421,9 @@ export default function PlatformScenarioView({ scenario }: { scenario: Scenario 
         </div>
       </div>
 
-      {activeTab === "runbook" ? (
+      {activeTab === "governance" ? (
+        <GovernanceView currentRail="ach" />
+      ) : activeTab === "runbook" ? (
         <ACHDailyRunbook
           scenario={scenario.id}
           transactionId={snapshot?.example_transaction_id || null}
@@ -599,10 +613,10 @@ export default function PlatformScenarioView({ scenario }: { scenario: Scenario 
 
           <div className="mt-6 grid gap-2 sm:grid-cols-4">
             {[
-              ["Current stage", snapshot?.current_stage || "—"],
-              ["Processor", snapshot?.processor_code || "—"],
-              ["Posting", snapshot?.posting_status || "—"],
-              ["Reconciliation", snapshot?.reconciliation_status || "—"],
+              ["Current stage", snapshot?.current_stage || (scenario.id === "critical" ? "processor" : scenario.id === "watch" ? "posting" : "reconciliation")],
+              ["Processor", snapshot?.processor_code || Object.fromEntries(scenario.detail)["Processor result"] || "Unknown"],
+              ["Posting", snapshot?.posting_status || Object.fromEntries(scenario.detail)["Posting status"] || "Unknown"],
+              ["Reconciliation", snapshot?.reconciliation_status || Object.fromEntries(scenario.detail)["Reconciliation"] || "Unknown"],
             ].map(([label, value]) => (
               <div key={label} className="rounded-lg border border-white/10 bg-black/20 p-3">
                 <div className="text-[10px] font-semibold tracking-[0.1em] text-slate-600">{label.toUpperCase()}</div>

@@ -11,6 +11,7 @@ from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
 
 from agentic.core import MODEL, call_json, call_text, merge_usage
+from governance import log_activity
 
 router = APIRouter(prefix="/api/ach-ai", tags=["ach-ai"])
 
@@ -26,6 +27,8 @@ TEAM = [
 ]
 
 class ACHChatRequest(BaseModel):
+    operator_id: str | None = Field(default=None, max_length=160)
+    operator_name: str | None = Field(default=None, max_length=160)
     message: str = Field(min_length=1, max_length=4000)
     scenario: str = Field(default="healthy", max_length=30)
     transaction_id: str | None = Field(default=None, max_length=120)
@@ -33,6 +36,8 @@ class ACHChatRequest(BaseModel):
     history: list[dict[str, str]] = Field(default_factory=list)
 
 class ACHTeamRequest(BaseModel):
+    operator_id: str | None = Field(default=None, max_length=160)
+    operator_name: str | None = Field(default=None, max_length=160)
     scenario: str = Field(default="healthy", max_length=30)
     transaction_id: str | None = Field(default=None, max_length=120)
     question: str = Field(default="Analyze the current ACH operating condition and recommend the safest next action.", max_length=4000)
@@ -147,6 +152,7 @@ def ach_chat(payload: ACHChatRequest) -> dict[str, Any]:
     if not os.getenv("OPENAI_API_KEY"):
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not configured")
     started = time.perf_counter()
+    run_id = f"achgovchat_{uuid.uuid4().hex[:12]}"
     try:
         context = load_context(payload.scenario, payload.transaction_id)
         history = "\n".join(
@@ -156,7 +162,8 @@ def ach_chat(payload: ACHChatRequest) -> dict[str, Any]:
         system = """You are ACH Ops Copilot, the operator-facing assistant for a regulated ACH payments operations workspace.
 Use the supplied database/screen context as the source of truth. The screen_context may include visibleTransaction, which is the transaction currently displayed to the operator even when the database snapshot is unavailable. Treat it as valid UI evidence and clearly distinguish known fields from unknown downstream fields. Never say no transaction is visible when visibleTransaction is present.
 Do not invent downstream acknowledgements, account status, network outcomes, incident status, or resolution state.
-ABSENCE OF EVIDENCE IS UNKNOWN, NOT RESOLVED: missing failure-case rows, missing events, or unavailable database records must never be used as proof that an incident is resolved or that a payment succeeded.
+ABSENCE OF EVIDENCE IS UNKNOWN, NOT RESOLVED: missing failure-case rows, missing events, unavailable database records, or absent downstream posting records must never be used as proof that an incident is resolved, that a payment succeeded, or that downstream posting did not occur.
+For every returned-payment question, state PAYMENT OUTCOME and OPERATIONS/INCIDENT STATUS as two separate fields. PAYMENT OUTCOME may be RETURNED while OPERATIONS/INCIDENT STATUS remains UNKNOWN or UNRESOLVED. Never collapse those two states.
 For retry/requeue questions, explicitly check whether downstream acceptance/posting is known before recommending replay because duplicate-payment risk matters.
 Distinguish PAYMENT OUTCOME from OPERATIONS STATUS. A returned payment can be operationally resolved without becoming successful, but a missing operations status remains UNKNOWN.
 If a consequential action is proposed, state that human approval is required.
@@ -173,13 +180,42 @@ OPERATOR QUESTION
 {payload.message}
 """
         answer, usage = call_text(system, user)
+        latency_ms = round((time.perf_counter()-started)*1000)
+        log_activity(
+            activity_type="CHAT",
+            agent_name="ACH Ops Copilot",
+            command_type="OPERATOR_CHAT",
+            command=payload.message,
+            evidence_sources=[
+                "operations_scenario_snapshots",
+                "ach_transactions",
+                "ach_transaction_events",
+                "ach_preflight_runs",
+                "ach_return_code_catalog",
+                "ach_failure_cases",
+                "screen context",
+            ],
+            result_summary=answer,
+            status="COMPLETED",
+            proposed_action="Human operator reviews and decides whether to act on the recommendation.",
+            human_approval_required=True,
+            rail="ach",
+            scenario=payload.scenario,
+            run_id=run_id,
+            operator_id=payload.operator_id,
+            operator_name=payload.operator_name,
+            model=MODEL,
+            token_usage=usage,
+            latency_ms=latency_ms,
+            metadata={"transaction_id": payload.transaction_id},
+        )
         return {
-            "run_id": f"achchat_{uuid.uuid4().hex[:12]}",
+            "run_id": run_id,
             "model": MODEL,
             "answer": answer,
             "context": {"scenario": payload.scenario, "transaction_id": (context.get("transaction") or {}).get("id")},
             "token_usage": usage,
-            "latency_ms": round((time.perf_counter()-started)*1000),
+            "latency_ms": latency_ms,
         }
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -191,6 +227,7 @@ def ach_team(payload: ACHTeamRequest) -> dict[str, Any]:
     if not os.getenv("OPENAI_API_KEY"):
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not configured")
     started = time.perf_counter()
+    run_id = f"achgovteam_{uuid.uuid4().hex[:12]}"
     try:
         context = load_context(payload.scenario, payload.transaction_id)
         context_text = _context_text(context, payload.screen_context)
@@ -202,9 +239,18 @@ def ach_team(payload: ACHTeamRequest) -> dict[str, Any]:
                 f"""You are {name}, the {role} specialist on an ACH payments operations team.
 {focus}
 Analyze only the supplied context. Do not invent facts.
-Treat missing evidence as UNKNOWN, never as proof of success or resolution.
+Treat missing evidence as UNKNOWN, never as proof of success, resolution, non-posting, non-acceptance, or absence of downstream activity.
+If downstream acceptance/posting state is not affirmatively known, duplicate risk MUST remain UNKNOWN or HIGH and you MUST NOT say retry/replay is safe or unlikely to duplicate.
 If screen_context contains visibleTransaction, use it as the operator-visible transaction even if the database transaction is missing.
-State: (1) strongest finding, (2) evidence/signals used, (3) immediate operational implication.
+State: (1) strongest finding, (2) evidence/signals used, (3) immediate operational implication, (4) what this specialist CANNOT determine from its own evidence.
+Role boundaries:
+- Nacha Specialist: file/batch/entry/SEC/trace/control totals and preflight only; cannot determine downstream acceptance/posting unless explicit evidence is supplied.
+- Returns Specialist: return reason, original linkage, return timing and remediation evidence; cannot infer processor or posting state from a return code alone.
+- Account & Authorization Specialist: account state, funds, stop-payment, authorization and receiver conditions; cannot infer network acceptance/posting unless explicit evidence is supplied.
+- Processor & Connectivity Specialist: acknowledgements, timeouts, retries, queues and connectivity; cannot infer core posting merely from processor silence.
+- Posting & Core Specialist: requires affirmative downstream posting/core evidence. Missing posting records mean UNKNOWN, never "not posted." It must not say retry is unlikely to duplicate unless authoritative downstream acceptance/posting is known.
+- Reconciliation Specialist: expected-vs-posted/settled amounts and unmatched activity; cannot independently prove network acceptance unless that evidence is supplied.
+- Risk & Controls Specialist: human approval, idempotency, fraud/compliance holds and containment; cannot substitute policy inference for missing transaction state.
 If evidence is insufficient, say what is missing.
 If escalation is warranted, the final incident-command handoff is Incident Intelligence / Lindsay; do not make generic technical support or system administration the accountable incident owner.""",
                 f"""QUESTION
@@ -213,8 +259,36 @@ If escalation is warranted, the final incident-command handoff is Incident Intel
 ACH CONTEXT
 {context_text}""",
             )
-            findings.append({"name": name, "role": role, "finding": " ".join(finding.split())})
+            normalized_finding = " ".join(finding.split())
+            findings.append({"name": name, "role": role, "finding": normalized_finding})
             usages.append(usage)
+            log_activity(
+                activity_type="AGENT_COMMAND",
+                agent_name=name,
+                command_type="SPECIALIST_ANALYSIS",
+                command=payload.question,
+                evidence_sources=[
+                    "operations_scenario_snapshots",
+                    "ach_transactions",
+                    "ach_transaction_events",
+                    "ach_preflight_runs",
+                    "ach_return_code_catalog",
+                    "ach_failure_cases",
+                    "screen context",
+                ],
+                result_summary=normalized_finding,
+                status="COMPLETED",
+                proposed_action="Human operator reviews the specialist recommendation.",
+                human_approval_required=True,
+                rail="ach",
+                scenario=payload.scenario,
+                run_id=run_id,
+                operator_id=payload.operator_id,
+                operator_name=payload.operator_name,
+                model=MODEL,
+                token_usage=usage,
+                metadata={"transaction_id": payload.transaction_id},
+            )
 
         findings_text = "\n".join(f"- {f['name']} ({f['role']}): {f['finding']}" for f in findings)
         contract = """Return a JSON object exactly in this shape:
@@ -233,8 +307,10 @@ ACH CONTEXT
 }"""
         synthesis, usage = call_json(
             """You are the ACH Operations Lead. Reconcile specialist findings into one safe operating recommendation.
-Prefer database and operator-visible screen evidence over inference. Never recommend retry/requeue when downstream acceptance/posting is ambiguous without first checking status.
-Treat missing evidence as UNKNOWN, never as proof of success, resolution, or absence of an incident.
+Prefer database and operator-visible screen evidence over inference. Never recommend retry/requeue when downstream acceptance/posting is ambiguous without first checking authoritative status.
+If ANY specialist claims "not posted", "no downstream acceptance", "safe to retry", "unlikely to duplicate", or equivalent language without affirmative downstream evidence, override that claim as unsupported and set duplicate_risk to UNKNOWN or HIGH.
+Treat missing evidence as UNKNOWN, never as proof of success, resolution, non-posting, non-acceptance, or absence of an incident.
+For returned-payment questions, keep payment_outcome and operations_status independent. A payment can be RETURNED while operations_status is UNKNOWN or UNRESOLVED when incident/remediation evidence is missing.
 A returned payment may be operationally resolved while remaining RETURNED, but only when there is affirmative evidence of operational resolution.
 Escalate to Incident Intelligence / Lindsay, the Incident Commander, for material/broad operational impact, sustained processing failure, or unresolved systemic risk. Do not substitute generic technical support/system administration as the final incident owner.
 Consequential actions require human approval.""",
@@ -256,13 +332,36 @@ SPECIALIST FINDINGS
             if "incident intelligence" not in action.lower() and "lindsay" not in action.lower():
                 synthesis["recommended_action"] = (action + " Handoff to Incident Intelligence / Lindsay for incident command.").strip()
         lead = {"name":"ACH Operations Lead","role":"Orchestrator","finding":str(synthesis.get("why") or synthesis.get("summary") or "Team analysis complete.")}
+        latency_ms = round((time.perf_counter()-started)*1000)
+        merged_usage = merge_usage(usages)
+        log_activity(
+            activity_type="AGENT_SYNTHESIS",
+            agent_name="ACH Operations Lead",
+            command_type="TEAM_SYNTHESIS",
+            command=payload.question,
+            evidence_sources=["specialist findings", "ACH database context", "screen context"],
+            result_summary=str(synthesis.get("summary") or "Team analysis complete."),
+            status=str(synthesis.get("operations_status") or "COMPLETED"),
+            proposed_action=str(synthesis.get("recommended_action") or ""),
+            human_approval_required=bool(synthesis.get("human_approval_required", True)),
+            escalation_target="Incident Intelligence / Lindsay" if synthesis.get("escalate_to_incident_intelligence") else None,
+            rail="ach",
+            scenario=payload.scenario,
+            run_id=run_id,
+            operator_id=payload.operator_id,
+            operator_name=payload.operator_name,
+            model=MODEL,
+            token_usage=merged_usage,
+            latency_ms=latency_ms,
+            metadata={"transaction_id": payload.transaction_id, "duplicate_risk": synthesis.get("duplicate_risk")},
+        )
         return {
-            "run_id": f"achteam_{uuid.uuid4().hex[:12]}",
+            "run_id": run_id,
             "model": MODEL,
             "agents": [lead, *findings],
             "analysis": synthesis,
-            "token_usage": merge_usage(usages),
-            "latency_ms": round((time.perf_counter()-started)*1000),
+            "token_usage": merged_usage,
+            "latency_ms": latency_ms,
         }
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

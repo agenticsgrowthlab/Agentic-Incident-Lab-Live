@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from agentic.core import MODEL, call_json, call_text, merge_usage
 from ach_ai import TEAM, load_context as load_ach_context
+from governance import log_activity
 
 router = APIRouter(prefix="/api/rail-runbook", tags=["rail-runbook"])
 
@@ -214,6 +215,7 @@ def run_step(payload: RunbookStepRequest) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not configured")
 
     started = time.perf_counter()
+    run_id = f"railrb_{uuid.uuid4().hex[:12]}"
     try:
         _ensure_schema()
         context = load_rail_context(rail, payload.scenario, payload.transaction_id)
@@ -246,8 +248,28 @@ Expected evidence: {payload.evidence_expected}
 CURRENT RAIL EVIDENCE
 {context_text}""",
             )
-            findings.append({"name": name, "role": role, "finding": " ".join(finding.split())})
+            normalized_finding = " ".join(finding.split())
+            findings.append({"name": name, "role": role, "finding": normalized_finding})
             usages.append(usage)
+            log_activity(
+                activity_type="RUNBOOK_AGENT",
+                agent_name=name,
+                command_type="RUNBOOK_STEP_REVIEW",
+                command=payload.task,
+                evidence_sources=["rail context", "screen context", payload.evidence_expected],
+                result_summary=normalized_finding,
+                status="COMPLETED",
+                proposed_action="Human SME reviews the specialist result before consequential action.",
+                human_approval_required=True,
+                rail=rail,
+                scenario=payload.scenario,
+                run_id=run_id,
+                operator_id=payload.operator_id,
+                operator_name=payload.operator_name,
+                model=MODEL,
+                token_usage=usage,
+                metadata={"step_id": payload.step_id, "phase": payload.phase},
+            )
 
         findings_text = "\n".join(
             f"- {f['name']} ({f['role']}): {f['finding']}" for f in findings
@@ -311,9 +333,29 @@ SPECIALIST WORK
         synthesis["specialist_findings"] = findings
         synthesis["rail"] = RAIL_LABELS[rail]
 
-        run_id = f"railrb_{uuid.uuid4().hex[:12]}"
         latency_ms = round((time.perf_counter() - started) * 1000)
         token_usage = merge_usage(usages)
+        log_activity(
+            activity_type="AGENT_SYNTHESIS",
+            agent_name=f"{RAIL_LABELS[rail]} Payments Operations Lead",
+            command_type="RUNBOOK_SYNTHESIS",
+            command=payload.task,
+            evidence_sources=["specialist findings", "rail context", "screen context"],
+            result_summary=str(synthesis.get("summary") or "Run-book synthesis complete."),
+            status=status,
+            proposed_action=str(synthesis.get("recommended_human_action") or ""),
+            human_approval_required=True,
+            escalation_target="Incident Intelligence / Lindsay" if synthesis.get("escalate_to_incident_intelligence") else None,
+            rail=rail,
+            scenario=payload.scenario,
+            run_id=run_id,
+            operator_id=payload.operator_id,
+            operator_name=payload.operator_name,
+            model=MODEL,
+            token_usage=token_usage,
+            latency_ms=round((time.perf_counter() - started) * 1000),
+            metadata={"step_id": payload.step_id, "phase": payload.phase},
+        )
 
         with psycopg.connect(_db(), autocommit=True) as conn:
             with conn.cursor() as cur:
@@ -376,6 +418,21 @@ def approve_step(payload: RunbookApprovalRequest) -> dict[str, Any]:
                     ),
                 )
                 approved_at = cur.fetchone()["approved_at"]
+                log_activity(
+                    activity_type="HUMAN_APPROVAL",
+                    agent_name="Human SME",
+                    command_type="RUNBOOK_APPROVAL",
+                    command=f"Approve {row['rail'].upper()} run-book step {row['step_id']}",
+                    evidence_sources=["AI run-book result", "specialist evidence package"],
+                    result_summary="Run-book step approved by the human SME." if payload.approved else "Run-book step not approved.",
+                    status="APPROVED" if payload.approved else "REJECTED",
+                    human_approval_required=False,
+                    rail=row["rail"],
+                    run_id=payload.run_id,
+                    operator_id=payload.operator_id,
+                    operator_name=payload.operator_name,
+                    metadata={"step_id": row["step_id"], "approver_note": payload.approver_note},
+                )
                 return {
                     "run_id": payload.run_id,
                     "rail": row["rail"],

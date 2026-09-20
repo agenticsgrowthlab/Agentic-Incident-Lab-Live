@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from agentic.core import MODEL, call_json, call_text, merge_usage
 from ach_ai import TEAM
 from rail_runbook import RAIL_LABELS, load_rail_context
+from governance import log_activity
 
 router = APIRouter(prefix="/api/payments-ops-ai", tags=["payments-ops-ai"])
 
@@ -53,6 +54,8 @@ RAIL_SPECIALISTS = {
 }
 
 class ChatRequest(BaseModel):
+    operator_id: str | None = Field(default=None, max_length=160)
+    operator_name: str | None = Field(default=None, max_length=160)
     rail: str = Field(min_length=2, max_length=30)
     scenario: str = Field(default="healthy", max_length=30)
     message: str = Field(min_length=1, max_length=6000)
@@ -61,6 +64,8 @@ class ChatRequest(BaseModel):
     conversation: list[dict[str, str]] = Field(default_factory=list)
 
 class TeamRequest(BaseModel):
+    operator_id: str | None = Field(default=None, max_length=160)
+    operator_name: str | None = Field(default=None, max_length=160)
     rail: str = Field(min_length=2, max_length=30)
     scenario: str = Field(default="healthy", max_length=30)
     question: str = Field(default="Analyze the current rail health and tell me what the operator should do next.", max_length=6000)
@@ -115,6 +120,8 @@ def _rail_rules(rail: str) -> str:
 @router.post("/chat")
 def chat(payload: ChatRequest) -> dict[str, Any]:
     rail = _rail(payload.rail)
+    started = time.perf_counter()
+    run_id = f"paychat_{__import__('uuid').uuid4().hex[:12]}"
     if not os.getenv("OPENAI_API_KEY"):
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not configured")
 
@@ -155,12 +162,36 @@ RECENT CONVERSATION
 OPERATOR QUESTION
 {payload.message}""",
         )
+        latency_ms = round((time.perf_counter() - started) * 1000)
+        log_activity(
+            activity_type="CHAT",
+            agent_name=f"{RAIL_LABELS[rail]} Ops Copilot",
+            command_type="OPERATOR_CHAT",
+            command=payload.message,
+            evidence_sources=["database rail context", "screen context", "recent conversation"],
+            result_summary=response,
+            status="COMPLETED",
+            proposed_action="Human operator reviews and decides whether to act on the recommendation.",
+            human_approval_required=True,
+            rail=rail,
+            scenario=payload.scenario,
+            run_id=run_id,
+            operator_id=payload.operator_id,
+            operator_name=payload.operator_name,
+            model=MODEL,
+            token_usage=usage,
+            latency_ms=latency_ms,
+            metadata={"transaction_id": payload.transaction_id},
+        )
         return {
+            "run_id": run_id,
+            "run_id": run_id,
             "rail": rail,
             "label": RAIL_LABELS[rail],
             "message": response,
             "model": MODEL,
             "token_usage": usage,
+            "latency_ms": latency_ms,
         }
     except HTTPException:
         raise
@@ -174,6 +205,7 @@ def team(payload: TeamRequest) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not configured")
 
     started = time.perf_counter()
+    run_id = f"payteam_{__import__('uuid').uuid4().hex[:12]}"
     try:
         context = _context(rail, payload.scenario, payload.transaction_id, payload.screen_context)
         findings: list[dict[str, str]] = []
@@ -206,12 +238,32 @@ QUESTION: {payload.question}
 CURRENT EVIDENCE
 {context}""",
             )
+            normalized_finding = " ".join(finding.split())
             findings.append({
                 "name": name,
                 "role": role,
-                "finding": " ".join(finding.split()),
+                "finding": normalized_finding,
             })
             usages.append(usage)
+            log_activity(
+                activity_type="AGENT_COMMAND",
+                agent_name=name,
+                command_type="SPECIALIST_ANALYSIS",
+                command=payload.question,
+                evidence_sources=["database rail context", "screen context"],
+                result_summary=normalized_finding,
+                status="COMPLETED",
+                proposed_action="Human operator reviews specialist recommendation.",
+                human_approval_required=True,
+                rail=rail,
+                scenario=payload.scenario,
+                run_id=run_id,
+                operator_id=payload.operator_id,
+                operator_name=payload.operator_name,
+                model=MODEL,
+                token_usage=usage,
+                metadata={"transaction_id": payload.transaction_id},
+            )
 
         findings_text = "\n".join(
             f"- {f['name']} ({f['role']}): {f['finding']}" for f in findings
@@ -257,14 +309,38 @@ SPECIALIST FINDINGS
         if synthesis.get("escalate_to_incident_intelligence"):
             synthesis["escalation_target"] = "Incident Intelligence / Lindsay"
 
+        latency_ms = round((time.perf_counter() - started) * 1000)
+        merged_usage = merge_usage(usages)
+        log_activity(
+            activity_type="AGENT_SYNTHESIS",
+            agent_name=f"{RAIL_LABELS[rail]} Payments Operations Lead",
+            command_type="TEAM_SYNTHESIS",
+            command=payload.question,
+            evidence_sources=["specialist findings", "database rail context", "screen context"],
+            result_summary=str(synthesis.get("summary") or "Team analysis complete."),
+            status=str(synthesis.get("operations_status") or "COMPLETED"),
+            proposed_action=str(synthesis.get("recommended_action") or ""),
+            human_approval_required=bool(synthesis.get("human_approval_required", True)),
+            escalation_target=str(synthesis.get("escalation_target")) if synthesis.get("escalate_to_incident_intelligence") else None,
+            rail=rail,
+            scenario=payload.scenario,
+            run_id=run_id,
+            operator_id=payload.operator_id,
+            operator_name=payload.operator_name,
+            model=MODEL,
+            token_usage=merged_usage,
+            latency_ms=latency_ms,
+            metadata={"transaction_id": payload.transaction_id, "duplicate_risk": synthesis.get("duplicate_risk")},
+        )
+
         return {
             "rail": rail,
             "label": RAIL_LABELS[rail],
             "lead": synthesis,
             "specialists": findings,
             "model": MODEL,
-            "token_usage": merge_usage(usages),
-            "latency_ms": round((time.perf_counter() - started) * 1000),
+            "token_usage": merged_usage,
+            "latency_ms": latency_ms,
         }
     except HTTPException:
         raise

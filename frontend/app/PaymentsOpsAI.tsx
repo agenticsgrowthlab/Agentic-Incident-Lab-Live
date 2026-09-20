@@ -28,7 +28,7 @@ export default function PaymentsOpsAI({
     setMessages(next);setInput("");setBusy(true);setError(null);
     try{
       const r=await fetch("/api/payments-ops-ai/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-        rail,scenario,message:question,transaction_id:transactionId||null,screen_context:screenContext||{},conversation:messages
+        operator_id:typeof window!=="undefined"?localStorage.getItem("ops-operator-id"):null,operator_name:typeof window!=="undefined"?localStorage.getItem("ops-operator-name"):null,rail,scenario,message:question,transaction_id:transactionId||null,screen_context:screenContext||{},conversation:messages
       })});
       const p=await r.json();
       if(!r.ok)throw new Error(p?.detail||"Payments Ops Copilot failed");
@@ -42,7 +42,7 @@ export default function PaymentsOpsAI({
     try{
       const question=input.trim()||`Analyze the current ${label} operations state. What should the operator do next?`;
       const r=await fetch("/api/payments-ops-ai/team",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-        rail,scenario,question,transaction_id:transactionId||null,screen_context:screenContext||{}
+        operator_id:typeof window!=="undefined"?localStorage.getItem("ops-operator-id"):null,operator_name:typeof window!=="undefined"?localStorage.getItem("ops-operator-name"):null,rail,scenario,question,transaction_id:transactionId||null,screen_context:screenContext||{}
       })});
       const p=await r.json();
       if(!r.ok)throw new Error(p?.detail||"AI team analysis failed");

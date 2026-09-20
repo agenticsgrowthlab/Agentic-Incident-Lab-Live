@@ -563,7 +563,7 @@ export default function RootLayout({
                 </div>
                 <div>
                   <div className="text-[15px] font-semibold tracking-[0.08em]">PLATFORM HEALTH</div>
-                  <div className="text-xs text-slate-400">Payments operations workspace · ACH</div>
+                  <div className="text-xs text-slate-400"><span id="platform-rail-subtitle">Payments operations workspace · ACH</span></div>
                 </div>
               </div>
 
