@@ -1,0 +1,362 @@
+{
+  "basis": "Current 2026 ACH return-reason code catalog, cross-checked against Nacha materials and current references",
+  "current_2026_count": 70,
+  "future_codes": [
+    {
+      "code": "R90",
+      "effective_date": "2028-03-17"
+    }
+  ],
+  "codes": [
+    {
+      "code": "R01",
+      "title": "Insufficient Funds",
+      "category": "funds"
+    },
+    {
+      "code": "R02",
+      "title": "Account Closed",
+      "category": "account"
+    },
+    {
+      "code": "R03",
+      "title": "No Account / Unable to Locate Account",
+      "category": "account"
+    },
+    {
+      "code": "R04",
+      "title": "Invalid Account Number Structure",
+      "category": "account"
+    },
+    {
+      "code": "R05",
+      "title": "Unauthorized Debit to Consumer Account Using Corporate SEC Code",
+      "category": "authorization"
+    },
+    {
+      "code": "R06",
+      "title": "Returned per ODFI's Request",
+      "category": "administrative"
+    },
+    {
+      "code": "R07",
+      "title": "Authorization Revoked by Customer",
+      "category": "authorization"
+    },
+    {
+      "code": "R08",
+      "title": "Payment Stopped",
+      "category": "authorization"
+    },
+    {
+      "code": "R09",
+      "title": "Uncollected Funds",
+      "category": "funds"
+    },
+    {
+      "code": "R10",
+      "title": "Customer Advises Originator is Not Known to Receiver and/or Originator is Not Authorized by Receiver to Debit Receiver's Account",
+      "category": "authorization"
+    },
+    {
+      "code": "R11",
+      "title": "Customer Advises Entry Not in Accordance with the Terms of the Authorization",
+      "category": "authorization"
+    },
+    {
+      "code": "R12",
+      "title": "Branch Sold to Another DFI",
+      "category": "routing"
+    },
+    {
+      "code": "R13",
+      "title": "Invalid ACH Routing Number",
+      "category": "routing"
+    },
+    {
+      "code": "R14",
+      "title": "Representative Payee Deceased or Unable to Continue in That Capacity",
+      "category": "account"
+    },
+    {
+      "code": "R15",
+      "title": "Beneficiary or Account Holder Deceased",
+      "category": "account"
+    },
+    {
+      "code": "R16",
+      "title": "Account Frozen / Entry Returned per OFAC Instruction",
+      "category": "account"
+    },
+    {
+      "code": "R17",
+      "title": "File Record Edit Criteria / Entry with Invalid Account Number Initiated Under Questionable Circumstances",
+      "category": "data_format"
+    },
+    {
+      "code": "R18",
+      "title": "Improper Effective Entry Date",
+      "category": "data_format"
+    },
+    {
+      "code": "R19",
+      "title": "Amount Field Error",
+      "category": "data_format"
+    },
+    {
+      "code": "R20",
+      "title": "Non-Transaction Account",
+      "category": "account"
+    },
+    {
+      "code": "R21",
+      "title": "Invalid Company Identification",
+      "category": "data_format"
+    },
+    {
+      "code": "R22",
+      "title": "Invalid Individual ID Number",
+      "category": "data_format"
+    },
+    {
+      "code": "R23",
+      "title": "Credit Entry Refused by Receiver",
+      "category": "other"
+    },
+    {
+      "code": "R24",
+      "title": "Duplicate Entry",
+      "category": "administrative"
+    },
+    {
+      "code": "R25",
+      "title": "Addenda Error",
+      "category": "data_format"
+    },
+    {
+      "code": "R26",
+      "title": "Mandatory Field Error",
+      "category": "data_format"
+    },
+    {
+      "code": "R27",
+      "title": "Trace Number Error",
+      "category": "data_format"
+    },
+    {
+      "code": "R28",
+      "title": "Routing Number Check Digit Error",
+      "category": "routing"
+    },
+    {
+      "code": "R29",
+      "title": "Corporate Customer Advises Not Authorized",
+      "category": "authorization"
+    },
+    {
+      "code": "R30",
+      "title": "RDFI Not Participant in Check Truncation Program",
+      "category": "administrative"
+    },
+    {
+      "code": "R31",
+      "title": "Permissible Return Entry",
+      "category": "administrative"
+    },
+    {
+      "code": "R32",
+      "title": "RDFI Non-Settlement",
+      "category": "administrative"
+    },
+    {
+      "code": "R33",
+      "title": "Return of XCK Entry",
+      "category": "administrative"
+    },
+    {
+      "code": "R34",
+      "title": "Limited Participation DFI",
+      "category": "administrative"
+    },
+    {
+      "code": "R35",
+      "title": "Return of Improper Debit Entry",
+      "category": "data_format"
+    },
+    {
+      "code": "R36",
+      "title": "Return of Improper Credit Entry",
+      "category": "data_format"
+    },
+    {
+      "code": "R37",
+      "title": "Source Document Presented for Payment",
+      "category": "other"
+    },
+    {
+      "code": "R38",
+      "title": "Stop Payment on Source Document",
+      "category": "authorization"
+    },
+    {
+      "code": "R39",
+      "title": "Improper Source Document / Source Document Presented for Payment",
+      "category": "data_format"
+    },
+    {
+      "code": "R40",
+      "title": "Return of ENR Entry by Federal Government Agency",
+      "category": "administrative"
+    },
+    {
+      "code": "R41",
+      "title": "Invalid Transaction Code",
+      "category": "data_format"
+    },
+    {
+      "code": "R42",
+      "title": "Routing Number / Check Digit Error",
+      "category": "routing"
+    },
+    {
+      "code": "R43",
+      "title": "Invalid DFI Account Number",
+      "category": "account"
+    },
+    {
+      "code": "R44",
+      "title": "Invalid Individual ID Number / Identification Number",
+      "category": "data_format"
+    },
+    {
+      "code": "R45",
+      "title": "Invalid Individual Name / Company Name",
+      "category": "data_format"
+    },
+    {
+      "code": "R46",
+      "title": "Invalid Representative Payee Indicator",
+      "category": "data_format"
+    },
+    {
+      "code": "R47",
+      "title": "Duplicate Enrollment",
+      "category": "administrative"
+    },
+    {
+      "code": "R50",
+      "title": "State Law Affecting RCK Acceptance",
+      "category": "administrative"
+    },
+    {
+      "code": "R51",
+      "title": "Item Related to RCK Entry is Ineligible, or RCK Entry is Improper",
+      "category": "authorization"
+    },
+    {
+      "code": "R52",
+      "title": "Stop Payment on Item Related to RCK Entry",
+      "category": "authorization"
+    },
+    {
+      "code": "R53",
+      "title": "Item and RCK Entry Presented for Payment",
+      "category": "other"
+    },
+    {
+      "code": "R61",
+      "title": "Misrouted Return",
+      "category": "administrative"
+    },
+    {
+      "code": "R62",
+      "title": "Return of Erroneous or Reversing Debit",
+      "category": "administrative"
+    },
+    {
+      "code": "R67",
+      "title": "Duplicate Return",
+      "category": "administrative"
+    },
+    {
+      "code": "R68",
+      "title": "Untimely Return",
+      "category": "administrative"
+    },
+    {
+      "code": "R69",
+      "title": "Field Error(s)",
+      "category": "data_format"
+    },
+    {
+      "code": "R70",
+      "title": "Permissible Return Entry Not Accepted / Return Not Requested by ODFI",
+      "category": "administrative"
+    },
+    {
+      "code": "R71",
+      "title": "Misrouted Dishonored Return",
+      "category": "administrative"
+    },
+    {
+      "code": "R72",
+      "title": "Untimely Dishonored Return",
+      "category": "administrative"
+    },
+    {
+      "code": "R73",
+      "title": "Timely Original Return",
+      "category": "administrative"
+    },
+    {
+      "code": "R74",
+      "title": "Corrected Return",
+      "category": "administrative"
+    },
+    {
+      "code": "R75",
+      "title": "Return Not a Duplicate",
+      "category": "administrative"
+    },
+    {
+      "code": "R76",
+      "title": "No Errors Found",
+      "category": "administrative"
+    },
+    {
+      "code": "R77",
+      "title": "Non-Acceptance of R62 Dishonored Return",
+      "category": "administrative"
+    },
+    {
+      "code": "R80",
+      "title": "IAT Entry Coding Errors",
+      "category": "iat"
+    },
+    {
+      "code": "R81",
+      "title": "Non-Participant in IAT Program",
+      "category": "iat"
+    },
+    {
+      "code": "R82",
+      "title": "Invalid Foreign Receiving DFI Identification",
+      "category": "iat"
+    },
+    {
+      "code": "R83",
+      "title": "Foreign Receiving DFI Unable to Settle",
+      "category": "iat"
+    },
+    {
+      "code": "R84",
+      "title": "Entry Not Processed by Gateway Operator",
+      "category": "iat"
+    },
+    {
+      "code": "R85",
+      "title": "Incorrectly Coded Outbound International Payment",
+      "category": "iat"
+    }
+  ]
+}

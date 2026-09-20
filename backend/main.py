@@ -16,8 +16,10 @@ from psycopg.types.json import Jsonb
 from agentic import autogen_runner, crewai_runner, langgraph_runner
 from agentic.core import client
 from agentic.retrieval import ingest_uploaded_document, list_uploaded_documents, retrieve
+from operations import router as operations_router
 
 app = FastAPI(title="Agentic Incident Lab API", version="1.1.0")
+app.include_router(operations_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

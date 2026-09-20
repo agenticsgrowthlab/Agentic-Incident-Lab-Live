@@ -1,0 +1,28 @@
+{
+  "preflight_module": true,
+  "upload_endpoint": "POST /api/operations/preflight",
+  "history_endpoint": "GET /api/operations/preflight/history",
+  "stores_raw_file": false,
+  "stores_sha256_and_result": true,
+  "test_results": {
+    "01-valid-synthetic-ach.ach": {
+      "passed": true,
+      "errors": [],
+      "warnings": []
+    },
+    "02-error-invalid-routing-check-digit.ach": {
+      "passed": false,
+      "errors": [
+        "ROUTING_CHECK_DIGIT"
+      ],
+      "warnings": []
+    },
+    "03-error-batch-credit-total-mismatch.ach": {
+      "passed": false,
+      "errors": [
+        "BATCH_CREDIT_TOTAL"
+      ],
+      "warnings": []
+    }
+  }
+}

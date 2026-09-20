@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import PlatformScenarioView from "./PlatformScenarioView";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -596,7 +597,7 @@ export default function RootLayout({
 
           <div className="mx-auto max-w-[1500px] px-4 pb-14 pt-6 lg:px-8">
             {scenarios.map((scenario) => (
-              <ScenarioView key={scenario.id} scenario={scenario} />
+              <PlatformScenarioView key={scenario.id} scenario={scenario} />
             ))}
           </div>
         </main>

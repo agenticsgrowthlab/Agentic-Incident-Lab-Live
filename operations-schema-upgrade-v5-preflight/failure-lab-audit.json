@@ -1,0 +1,247 @@
+{
+  "nacha_return_cases_current_2026": 70,
+  "future_return_cases": [
+    "R90"
+  ],
+  "additional_operational_failure_cases": 33,
+  "synthetic_account_states": 8,
+  "failure_cases": [
+    {
+      "id": "PF-FILE-HEADER",
+      "category": "PREFLIGHT",
+      "subtype": "FILE_STRUCTURE",
+      "name": "Invalid file header",
+      "expected_resolution": "Correct file header and regenerate file"
+    },
+    {
+      "id": "PF-FILE-CONTROL",
+      "category": "PREFLIGHT",
+      "subtype": "FILE_STRUCTURE",
+      "name": "File control totals mismatch",
+      "expected_resolution": "Correct control totals and regenerate file"
+    },
+    {
+      "id": "PF-BATCH-HEADER",
+      "category": "PREFLIGHT",
+      "subtype": "BATCH_STRUCTURE",
+      "name": "Invalid batch header",
+      "expected_resolution": "Correct batch header and regenerate batch"
+    },
+    {
+      "id": "PF-BATCH-CONTROL",
+      "category": "PREFLIGHT",
+      "subtype": "BATCH_STRUCTURE",
+      "name": "Batch control totals mismatch",
+      "expected_resolution": "Correct batch control totals"
+    },
+    {
+      "id": "PF-RECORD-LENGTH",
+      "category": "PREFLIGHT",
+      "subtype": "FILE_STRUCTURE",
+      "name": "Invalid record length",
+      "expected_resolution": "Regenerate file with valid fixed-width records"
+    },
+    {
+      "id": "PF-BLOCKING",
+      "category": "PREFLIGHT",
+      "subtype": "FILE_STRUCTURE",
+      "name": "Blocking factor or record count error",
+      "expected_resolution": "Correct block padding / record count"
+    },
+    {
+      "id": "PF-ENTRY-HASH",
+      "category": "PREFLIGHT",
+      "subtype": "BATCH_STRUCTURE",
+      "name": "Entry hash mismatch",
+      "expected_resolution": "Recalculate and correct entry hash"
+    },
+    {
+      "id": "PF-TRACE",
+      "category": "PREFLIGHT",
+      "subtype": "ENTRY_STRUCTURE",
+      "name": "Malformed or duplicate trace number",
+      "expected_resolution": "Regenerate unique valid trace number"
+    },
+    {
+      "id": "PF-ROUTING-CHECK",
+      "category": "PREFLIGHT",
+      "subtype": "ENTRY_STRUCTURE",
+      "name": "Invalid RDFI routing check digit",
+      "expected_resolution": "Correct routing number upstream"
+    },
+    {
+      "id": "PF-SEC",
+      "category": "PREFLIGHT",
+      "subtype": "ENTRY_STRUCTURE",
+      "name": "Invalid or unsupported SEC code",
+      "expected_resolution": "Correct SEC code for transaction type"
+    },
+    {
+      "id": "PF-MANDATORY-FIELD",
+      "category": "PREFLIGHT",
+      "subtype": "ENTRY_STRUCTURE",
+      "name": "Missing mandatory field",
+      "expected_resolution": "Populate required field and regenerate entry"
+    },
+    {
+      "id": "PF-EFFECTIVE-DATE",
+      "category": "PREFLIGHT",
+      "subtype": "ENTRY_STRUCTURE",
+      "name": "Improper effective entry date",
+      "expected_resolution": "Correct effective date and regenerate file"
+    },
+    {
+      "id": "PF-DUP-FILE",
+      "category": "PREFLIGHT",
+      "subtype": "FILE_STRUCTURE",
+      "name": "Duplicate file detected",
+      "expected_resolution": "Confirm original status; suppress duplicate submission"
+    },
+    {
+      "id": "ACCT-INSUFFICIENT",
+      "category": "ACCOUNT",
+      "subtype": "FUNDS",
+      "name": "Insufficient funds",
+      "expected_resolution": "Handle return / notify originator; do not force original payment through"
+    },
+    {
+      "id": "ACCT-UNCOLLECTED",
+      "category": "ACCOUNT",
+      "subtype": "FUNDS",
+      "name": "Uncollected funds",
+      "expected_resolution": "Handle return per policy"
+    },
+    {
+      "id": "ACCT-CLOSED",
+      "category": "ACCOUNT",
+      "subtype": "ACCOUNT_STATE",
+      "name": "Account closed",
+      "expected_resolution": "Return and correct destination account before new payment"
+    },
+    {
+      "id": "ACCT-NOT-FOUND",
+      "category": "ACCOUNT",
+      "subtype": "ACCOUNT_STATE",
+      "name": "Account not found / unable to locate",
+      "expected_resolution": "Correct account information upstream"
+    },
+    {
+      "id": "ACCT-FROZEN",
+      "category": "ACCOUNT",
+      "subtype": "ACCOUNT_STATE",
+      "name": "Account frozen or restricted",
+      "expected_resolution": "Hold / return according to account restriction"
+    },
+    {
+      "id": "ACCT-NONTRANSACTION",
+      "category": "ACCOUNT",
+      "subtype": "ACCOUNT_STATE",
+      "name": "Non-transaction account",
+      "expected_resolution": "Use eligible account or return payment"
+    },
+    {
+      "id": "ACCT-STOP-PAY",
+      "category": "ACCOUNT",
+      "subtype": "AUTHORIZATION",
+      "name": "Stop payment",
+      "expected_resolution": "Return / honor stop-payment instruction"
+    },
+    {
+      "id": "ACCT-AUTH-REVOKED",
+      "category": "ACCOUNT",
+      "subtype": "AUTHORIZATION",
+      "name": "Authorization revoked",
+      "expected_resolution": "Return and prevent reinitiation unless new authorization exists"
+    },
+    {
+      "id": "ACCT-UNAUTHORIZED",
+      "category": "ACCOUNT",
+      "subtype": "AUTHORIZATION",
+      "name": "Unauthorized debit",
+      "expected_resolution": "Return / investigate authorization evidence"
+    },
+    {
+      "id": "ACCT-CREDIT-REFUSED",
+      "category": "ACCOUNT",
+      "subtype": "ACCOUNT_STATE",
+      "name": "Credit entry refused by receiver",
+      "expected_resolution": "Return and notify originator"
+    },
+    {
+      "id": "OPS-PROCESSOR-TIMEOUT",
+      "category": "OPERATIONS",
+      "subtype": "PROCESSOR",
+      "name": "Processor timeout",
+      "expected_resolution": "Verify downstream state, then safely retry or requeue"
+    },
+    {
+      "id": "OPS-PROCESSOR-DOWN",
+      "category": "OPERATIONS",
+      "subtype": "PROCESSOR",
+      "name": "Processor unavailable",
+      "expected_resolution": "Restore connectivity, verify state, then resume"
+    },
+    {
+      "id": "OPS-ACK-MISSING",
+      "category": "OPERATIONS",
+      "subtype": "ACK",
+      "name": "Missing acknowledgement",
+      "expected_resolution": "Query downstream/file status before any retry"
+    },
+    {
+      "id": "OPS-RETRY-EXHAUSTED",
+      "category": "OPERATIONS",
+      "subtype": "PROCESSOR",
+      "name": "Retry ceiling exhausted",
+      "expected_resolution": "Investigate and require safe requeue decision"
+    },
+    {
+      "id": "OPS-POSTING-FAILED",
+      "category": "OPERATIONS",
+      "subtype": "POSTING",
+      "name": "Core posting failed",
+      "expected_resolution": "Retry posting / repair interface, then reconcile"
+    },
+    {
+      "id": "OPS-POSTING-TIMEOUT",
+      "category": "OPERATIONS",
+      "subtype": "POSTING",
+      "name": "Posting confirmation timeout",
+      "expected_resolution": "Query core posting status before replay"
+    },
+    {
+      "id": "OPS-SETTLEMENT-EXCEPTION",
+      "category": "OPERATIONS",
+      "subtype": "SETTLEMENT",
+      "name": "Settlement exception",
+      "expected_resolution": "Resolve settlement discrepancy and reconcile"
+    },
+    {
+      "id": "OPS-RECON-MISMATCH",
+      "category": "OPERATIONS",
+      "subtype": "RECONCILIATION",
+      "name": "Reconciliation mismatch",
+      "expected_resolution": "Match ACH, settlement, and posting records; resolve difference"
+    },
+    {
+      "id": "OPS-QUEUE-BACKLOG",
+      "category": "OPERATIONS",
+      "subtype": "QUEUE",
+      "name": "Queue backlog",
+      "expected_resolution": "Restore throughput and safely drain backlog"
+    },
+    {
+      "id": "OPS-CONNECTIVITY",
+      "category": "OPERATIONS",
+      "subtype": "CONNECTIVITY",
+      "name": "Credit union / core connectivity failure",
+      "expected_resolution": "Restore connection and replay only verified-safe items"
+    }
+  ],
+  "v4_features": [
+    "Operations subtab: Use Cases Covered",
+    "Lists preflight, account, operations, and Nacha return-code training cases",
+    "Reset Lab to Red control",
+    "POST /api/operations/reset-lab endpoint"
+  ]
+}
