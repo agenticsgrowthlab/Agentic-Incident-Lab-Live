@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import ACHOpsAI from "./ACHOpsAI";
+import ACHDailyRunbook from "./ACHDailyRunbook";
 
 type Scenario = {
   id: "healthy" | "watch" | "critical";
@@ -139,7 +140,7 @@ export default function PlatformScenarioView({ scenario }: { scenario: Scenario 
   const [detail, setDetail] = useState<TransactionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "use-cases" | "preflight">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "use-cases" | "preflight" | "runbook">("dashboard");
   const [failureLab, setFailureLab] = useState<FailureLabResponse | null>(null);
   const [returnCodes, setReturnCodes] = useState<ReturnCodeResponse | null>(null);
   const [resetting, setResetting] = useState(false);
@@ -382,6 +383,17 @@ export default function PlatformScenarioView({ scenario }: { scenario: Scenario 
           >
             Nacha Preflight
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("runbook")}
+            className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
+              activeTab === "runbook"
+                ? "bg-cyan-300/10 text-cyan-200 ring-1 ring-cyan-300/25"
+                : "text-slate-500 hover:bg-white/[0.04] hover:text-slate-300"
+            }`}
+          >
+            Daily Run Book
+          </button>
         </div>
 
         <div className="flex items-center gap-3">
@@ -397,7 +409,30 @@ export default function PlatformScenarioView({ scenario }: { scenario: Scenario 
         </div>
       </div>
 
-      {activeTab === "use-cases" ? (
+      {activeTab === "runbook" ? (
+        <ACHDailyRunbook
+          scenario={scenario.id}
+          transactionId={snapshot?.example_transaction_id || null}
+          screenContext={{
+            overall: snapshot?.overall_status || scenario.overall,
+            posting: snapshot?.posting_status || Object.fromEntries(scenario.detail)["Posting status"] || null,
+            settlement: snapshot?.settlement_status || Object.fromEntries(scenario.detail)["Settlement status"] || null,
+            reconciliation: snapshot?.reconciliation_status || Object.fromEntries(scenario.detail)["Reconciliation"] || null,
+            processorCode: snapshot?.processor_code || null,
+            visibleTransaction: {
+              id: snapshot?.example_transaction_id || `SIM-ACH-${scenario.id.toUpperCase()}`,
+              title: txTitle,
+              status: snapshot?.transaction_status || scenario.txBadge,
+              trace: snapshot?.trace_number || scenario.trace,
+              amount: snapshot?.amount ?? 1000,
+              creditUnion: snapshot?.credit_union_name || scenario.trace.split("·").pop()?.trim() || null,
+              currentStage: snapshot?.current_stage || null,
+              retryCount: snapshot?.retry_count ?? null,
+            },
+            preflightResult: preflightResult || null,
+          }}
+        />
+      ) : activeTab === "use-cases" ? (
         <section className="grid gap-4">
           <div className="signal-card p-5 sm:p-6">
             <div className="text-xs font-semibold tracking-[0.14em] text-violet-300">USE CASE COVERAGE</div>
