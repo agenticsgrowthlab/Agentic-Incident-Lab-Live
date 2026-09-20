@@ -659,7 +659,7 @@ export default function RootLayout({
     var railSubtitle = document.getElementById('platform-rail-subtitle');
     if (railSubtitle) {
       var railLabels = { ach: 'ACH', fednow: 'FedNow', fedwire: 'FedWire', rtp: 'RTP' };
-      railSubtitle.textContent = 'Payments operations workspace · ' + railLabels[rail];
+      railSubtitle.textContent = 'Payments operations workspace Â· ' + railLabels[rail];
     }
 
     ['ach', 'fednow', 'fedwire', 'rtp'].forEach(function (name) {

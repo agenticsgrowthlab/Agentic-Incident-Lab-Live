@@ -168,18 +168,18 @@ export default function PlatformScenarioView({ scenario }: { scenario: Scenario 
       setDetail({
         transaction: {
           id: `SIM-ACH-${scenario.id.toUpperCase()}`,
-          credit_union_name: scenario.trace.split("·").pop()?.trim() || "Synthetic credit union",
-          trace_number: scenario.trace.split("·")[0]?.replace("Trace ", "").trim() || "—",
+          credit_union_name: scenario.trace.split("Â·").pop()?.trim() || "Synthetic credit union",
+          trace_number: scenario.trace.split("Â·")[0]?.replace("Trace ", "").trim() || "â€”",
           ach_file_identifier: "Synthetic scenario",
-          batch_number: "—",
-          sec_code: fallback["SEC code"] || "—",
+          batch_number: "â€”",
+          sec_code: fallback["SEC code"] || "â€”",
           amount: 1000,
           odfi_routing: "Synthetic",
           rdfi_routing: "Synthetic",
           current_stage: scenario.id === "critical" ? "processor" : scenario.id === "watch" ? "posting" : "reconciliation",
           status: scenario.txBadge,
-          processor_code: "—",
-          processor_message: fallback["Processor result"] || (scenario.id === "critical" ? "Timeout / no acknowledgement" : "—"),
+          processor_code: "â€”",
+          processor_message: fallback["Processor result"] || (scenario.id === "critical" ? "Timeout / no acknowledgement" : "â€”"),
           posting_status: fallback["Posting status"] || "Unknown",
           settlement_status: fallback["Settlement status"] || "Unknown",
           reconciliation_status: fallback["Reconciliation"] || "Unknown",
@@ -328,7 +328,7 @@ export default function PlatformScenarioView({ scenario }: { scenario: Scenario 
             status: snapshot?.transaction_status || scenario.txBadge,
             trace: snapshot?.trace_number || scenario.trace,
             amount: snapshot?.amount ?? 1000,
-            creditUnion: snapshot?.credit_union_name || scenario.trace.split("·").pop()?.trim() || null,
+            creditUnion: snapshot?.credit_union_name || scenario.trace.split("Â·").pop()?.trim() || null,
             currentStage: snapshot?.current_stage || (scenario.id === "critical" ? "processor" : scenario.id === "watch" ? "posting" : "reconciliation"),
             postingStatus: snapshot?.posting_status || Object.fromEntries(scenario.detail)["Posting status"] || null,
             settlementStatus: snapshot?.settlement_status || Object.fromEntries(scenario.detail)["Settlement status"] || null,
@@ -478,7 +478,7 @@ export default function PlatformScenarioView({ scenario }: { scenario: Scenario 
       ) : activeTab === "preflight" ? (
         <section className="grid gap-4">
           <div className="signal-card p-5 sm:p-6">
-            <div className="text-xs font-semibold tracking-[0.14em] text-emerald-300">NACHA PREFLIGHT · DRY RUN</div>
+            <div className="text-xs font-semibold tracking-[0.14em] text-emerald-300">NACHA PREFLIGHT Â· DRY RUN</div>
             <h1 className="mt-2 text-2xl font-semibold">Validate a synthetic ACH file before transmission</h1>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">
               Structural and selected ACH/Nacha checks only. Nothing is transmitted and no account is touched.
@@ -489,7 +489,7 @@ export default function PlatformScenarioView({ scenario }: { scenario: Scenario 
                 className="block w-full rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-emerald-300/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-emerald-200" />
               <button type="button" disabled={!preflightFile || preflightRunning} onClick={runPreflight}
                 className="rounded-lg border border-emerald-300/25 bg-emerald-300/[0.10] px-4 py-3 text-sm font-semibold text-emerald-100 disabled:opacity-40">
-                {preflightRunning ? "Validating…" : "Run Nacha Preflight"}
+                {preflightRunning ? "Validatingâ€¦" : "Run Nacha Preflight"}
               </button>
             </div>
           </div>
