@@ -143,3 +143,23 @@
 }
 
 :root[data-theme="light"] .theme-toggle:hover{background:#eef4f6 !important}
+
+
+/* PROMPT REGISTRY CONTRAST v9.9 */
+.prompt-source-template,
+:root[data-theme="light"] .prompt-source-template,
+:root[data-theme="dark"] .prompt-source-template{
+  background:#050c12 !important;
+  color:#f8fafc !important;
+  border-color:#263746 !important;
+}
+
+:root[data-theme="light"] #rail-nav{
+  background:rgb(237 243 246 / .97) !important;
+}
+
+:root[data-theme="light"] .rail-operations-view > .sticky,
+:root[data-theme="light"] .platform-scenario > .sticky{
+  background:rgb(245 247 249 / .97) !important;
+  border-color:#d8e1e6 !important;
+}

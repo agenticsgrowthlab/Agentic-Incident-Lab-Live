@@ -598,7 +598,7 @@ export default function RootLayout({
             </div>
           </header>
 
-          <nav id="rail-nav" className="border-b border-white/10 bg-[#08131b]">
+          <nav id="rail-nav" className="sticky top-[49px] z-[90] border-b border-white/10 bg-[#08131b]/95 backdrop-blur-xl">
             <div className="mx-auto flex max-w-[1500px] items-center gap-1 overflow-x-auto px-4 py-2 lg:px-8">
               <span className="mr-3 shrink-0 text-[10px] font-semibold tracking-[0.14em] text-slate-600">PAYMENT RAIL</span>
               <a id="rail-link-ach" href="/?workspace=platform&rail=ach&scenario=healthy" className="rail-link rounded-md px-4 py-2 text-sm font-semibold transition">ACH</a>

@@ -349,7 +349,7 @@ export default function PlatformScenarioView({ scenario }: { scenario: Scenario 
           } : null,
         }}
       />
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+      <div className="sticky top-[94px] z-[80] -mx-4 mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#071017]/95 px-4 py-3 backdrop-blur-xl lg:-mx-8 lg:px-8">
         <div className="flex items-center gap-2">
           <button
             type="button"

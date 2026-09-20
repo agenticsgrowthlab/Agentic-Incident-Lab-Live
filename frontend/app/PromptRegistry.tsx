@@ -130,7 +130,7 @@ export default function PromptRegistry({
           <div className="mb-2 text-[10px] font-semibold tracking-[0.12em] text-slate-500">
             EXACT SOURCE TEMPLATE
           </div>
-          <pre className="max-h-[520px] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-white/10 bg-[#050c12] p-4 font-mono text-xs leading-6 text-slate-300">
+          <pre className="prompt-source-template max-h-[520px] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-white/10 bg-[#050c12] p-4 font-mono text-xs leading-6">
             {cleanTemplate(item.template)}
           </pre>
         </div>
