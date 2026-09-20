@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import RailDailyRunbook from "./RailDailyRunbook";
 import GovernanceView from "./GovernanceView";
+import PaymentsOpsAI from "./PaymentsOpsAI";
 
 type Rail = "fednow" | "fedwire" | "rtp";
 type Scenario = "healthy" | "watch" | "critical";
@@ -46,6 +47,28 @@ export default function RailOperationsView({rail}:{rail:Rail}) {
   const toneBg=tone==="emerald"?"bg-emerald-300/[0.06]":tone==="amber"?"bg-amber-300/[0.06]":"bg-red-300/[0.06]";
 
   return <div className="rail-operations-view">
+    <PaymentsOpsAI
+      rail={rail}
+      scenario={scenario}
+      transactionId={snapshot?.example_id||null}
+      screenContext={{
+        activeTab:tab,
+        overall:snapshot?.overall_status||null,
+        reconciliation:snapshot?.reconciliation_rate??null,
+        exceptionCount:snapshot?.exception_count??null,
+        oldestExceptionSeconds:snapshot?.oldest_exception_seconds??null,
+        visibleTransaction:snapshot?{
+          id:snapshot.example_id,
+          status:snapshot.example_status,
+          amount:snapshot.example_amount,
+          messageType:snapshot.example_message_type,
+          currentStage:snapshot.current_stage,
+          source:"neon-rail-simulation",
+        }:null,
+        railMetadata:meta||null,
+        latestMessageTest:testResult||null,
+      }}
+    />
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
       <div className="flex flex-wrap items-center gap-2">
         {[["dashboard","Operations Dashboard"],["coverage","Use Cases Covered"],["test",meta?.test_label||"ISO 20022 Message Test"],["runbook","Daily Run Book"],["governance","Governance"]].map(([id,label])=>
