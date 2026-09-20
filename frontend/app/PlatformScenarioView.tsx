@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import ACHOpsAI from "./ACHOpsAI";
 
 type Scenario = {
   id: "healthy" | "watch" | "critical";
@@ -276,6 +277,25 @@ export default function PlatformScenarioView({ scenario }: { scenario: Scenario 
 
   return (
     <div id={`platform-scenario-${scenario.id}`} className="platform-scenario hidden">
+      <ACHOpsAI
+        scenario={scenario.id}
+        transactionId={snapshot?.example_transaction_id || null}
+        screenContext={{
+          activeTab,
+          overall: snapshot?.overall_status || scenario.overall,
+          posting: snapshot?.posting_status || null,
+          settlement: snapshot?.settlement_status || null,
+          reconciliation: snapshot?.reconciliation_status || null,
+          processorCode: snapshot?.processor_code || null,
+          preflightResult: preflightResult ? {
+            run_id: preflightResult.run_id,
+            filename: preflightResult.filename,
+            passed: preflightResult.passed,
+            errors: preflightResult.errors,
+            warnings: preflightResult.warnings,
+          } : null,
+        }}
+      />
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
         <div className="flex items-center gap-2">
           <button
