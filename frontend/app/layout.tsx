@@ -656,6 +656,12 @@ export default function RootLayout({
         : 'text-slate-500 hover:bg-white/[0.04] hover:text-slate-300');
 
 
+    var railSubtitle = document.getElementById('platform-rail-subtitle');
+    if (railSubtitle) {
+      var railLabels = { ach: 'ACH', fednow: 'FedNow', fedwire: 'FedWire', rtp: 'RTP' };
+      railSubtitle.textContent = 'Payments operations workspace · ' + railLabels[rail];
+    }
+
     ['ach', 'fednow', 'fedwire', 'rtp'].forEach(function (name) {
       var railView = document.getElementById('rail-view-' + name);
       if (railView) railView.style.display = mode === 'platform' && rail === name ? 'block' : 'none';

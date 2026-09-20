@@ -117,7 +117,20 @@ def _seed() -> None:
                             exception_count,oldest_exception_seconds,reconciliation_rate,
                             example_status,example_amount,example_message_type,example_id,current_stage)
                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                           ON CONFLICT (rail,scenario) DO NOTHING""",
+                           ON CONFLICT (rail,scenario) DO UPDATE SET
+                             overall_status=EXCLUDED.overall_status,
+                             success_rate=EXCLUDED.success_rate,
+                             transaction_count=EXCLUDED.transaction_count,
+                             volume=EXCLUDED.volume,
+                             exception_count=EXCLUDED.exception_count,
+                             oldest_exception_seconds=EXCLUDED.oldest_exception_seconds,
+                             reconciliation_rate=EXCLUDED.reconciliation_rate,
+                             example_status=EXCLUDED.example_status,
+                             example_amount=EXCLUDED.example_amount,
+                             example_message_type=EXCLUDED.example_message_type,
+                             example_id=EXCLUDED.example_id,
+                             current_stage=EXCLUDED.current_stage,
+                             updated_at=now()""",
                         (rail, scenario, *row),
                     )
 

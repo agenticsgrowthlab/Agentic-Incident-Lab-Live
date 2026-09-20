@@ -163,7 +163,42 @@ export default function PlatformScenarioView({ scenario }: { scenario: Scenario 
   }, [scenario.id]);
 
   const openTransaction = async () => {
-    if (!snapshot?.example_transaction_id) return;
+    if (!snapshot?.example_transaction_id) {
+      const fallback = Object.fromEntries(scenario.detail);
+      setDetail({
+        transaction: {
+          id: `SIM-ACH-${scenario.id.toUpperCase()}`,
+          credit_union_name: scenario.trace.split("·").pop()?.trim() || "Synthetic credit union",
+          trace_number: scenario.trace.split("·")[0]?.replace("Trace ", "").trim() || "—",
+          ach_file_identifier: "Synthetic scenario",
+          batch_number: "—",
+          sec_code: fallback["SEC code"] || "—",
+          amount: 1000,
+          odfi_routing: "Synthetic",
+          rdfi_routing: "Synthetic",
+          current_stage: scenario.id === "critical" ? "processor" : scenario.id === "watch" ? "posting" : "reconciliation",
+          status: scenario.txBadge,
+          processor_code: "—",
+          processor_message: fallback["Processor result"] || (scenario.id === "critical" ? "Timeout / no acknowledgement" : "—"),
+          posting_status: fallback["Posting status"] || "Unknown",
+          settlement_status: fallback["Settlement status"] || "Unknown",
+          reconciliation_status: fallback["Reconciliation"] || "Unknown",
+          difference_amount: 0,
+          recon_reason: "Synthetic visible fallback",
+        },
+        events: scenario.flow.map(([stage, status, eventTime], index) => ({
+          sequence: index + 1,
+          stage,
+          status,
+          event_time: new Date().toISOString(),
+          source_system: "Synthetic scenario",
+          correlation_id: null,
+          response_code: null,
+          message: `${stage}: ${status} (${eventTime})`,
+        })),
+      });
+      return;
+    }
     setDetailLoading(true);
     try {
       const response = await fetch(`/api/operations/transactions/${snapshot.example_transaction_id}`, { cache: "no-store" });
@@ -287,6 +322,22 @@ export default function PlatformScenarioView({ scenario }: { scenario: Scenario 
           settlement: snapshot?.settlement_status || null,
           reconciliation: snapshot?.reconciliation_status || null,
           processorCode: snapshot?.processor_code || null,
+          visibleTransaction: {
+            id: snapshot?.example_transaction_id || `SIM-ACH-${scenario.id.toUpperCase()}`,
+            title: txTitle,
+            status: snapshot?.transaction_status || scenario.txBadge,
+            trace: snapshot?.trace_number || scenario.trace,
+            amount: snapshot?.amount ?? 1000,
+            creditUnion: snapshot?.credit_union_name || scenario.trace.split("·").pop()?.trim() || null,
+            currentStage: snapshot?.current_stage || (scenario.id === "critical" ? "processor" : scenario.id === "watch" ? "posting" : "reconciliation"),
+            postingStatus: snapshot?.posting_status || Object.fromEntries(scenario.detail)["Posting status"] || null,
+            settlementStatus: snapshot?.settlement_status || Object.fromEntries(scenario.detail)["Settlement status"] || null,
+            reconciliationStatus: snapshot?.reconciliation_status || Object.fromEntries(scenario.detail)["Reconciliation"] || null,
+            processorCode: snapshot?.processor_code || null,
+            processorMessage: snapshot?.processor_message || Object.fromEntries(scenario.detail)["Processor result"] || null,
+            retryCount: snapshot?.retry_count ?? Number(Object.fromEntries(scenario.detail)["Retries"] || 0),
+            source: snapshot ? "neon" : "visible-static-fallback",
+          },
           preflightResult: preflightResult ? {
             run_id: preflightResult.run_id,
             filename: preflightResult.filename,
@@ -423,6 +474,48 @@ export default function PlatformScenarioView({ scenario }: { scenario: Scenario 
               ))}
             </div>
           </div>
+        </section>
+      ) : activeTab === "preflight" ? (
+        <section className="grid gap-4">
+          <div className="signal-card p-5 sm:p-6">
+            <div className="text-xs font-semibold tracking-[0.14em] text-emerald-300">NACHA PREFLIGHT · DRY RUN</div>
+            <h1 className="mt-2 text-2xl font-semibold">Validate a synthetic ACH file before transmission</h1>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">
+              Structural and selected ACH/Nacha checks only. Nothing is transmitted and no account is touched.
+            </p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+              <input type="file" accept=".ach,.txt,text/plain"
+                onChange={(e) => { setPreflightFile(e.target.files?.[0] || null); setPreflightResult(null); }}
+                className="block w-full rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-emerald-300/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-emerald-200" />
+              <button type="button" disabled={!preflightFile || preflightRunning} onClick={runPreflight}
+                className="rounded-lg border border-emerald-300/25 bg-emerald-300/[0.10] px-4 py-3 text-sm font-semibold text-emerald-100 disabled:opacity-40">
+                {preflightRunning ? "Validating…" : "Run Nacha Preflight"}
+              </button>
+            </div>
+          </div>
+
+          {preflightResult && (
+            <div className={`rounded-xl border p-5 sm:p-6 ${preflightResult.passed ? "border-emerald-300/25 bg-emerald-300/[0.06]" : "border-red-300/25 bg-red-300/[0.06]"}`}>
+              <div className={`text-xs font-semibold tracking-[0.14em] ${preflightResult.passed ? "text-emerald-300" : "text-red-300"}`}>
+                {preflightResult.passed ? "PREFLIGHT PASSED" : "PREFLIGHT FAILED"}
+              </div>
+              <div className="mt-3 text-sm text-slate-300">{preflightResult.filename}</div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                <div><div className="text-xs text-slate-500">Errors</div><div className="mt-1 font-mono text-lg">{preflightResult.errors.length}</div></div>
+                <div><div className="text-xs text-slate-500">Warnings</div><div className="mt-1 font-mono text-lg">{preflightResult.warnings.length}</div></div>
+                <div><div className="text-xs text-slate-500">Dry run</div><div className="mt-1 font-mono text-lg">{preflightResult.dry_run ? "YES" : "NO"}</div></div>
+                <div><div className="text-xs text-slate-500">Transmitted</div><div className="mt-1 font-mono text-lg">{preflightResult.transmitted ? "YES" : "NO"}</div></div>
+              </div>
+              <div className="mt-5 grid gap-3">
+                {[...preflightResult.errors, ...preflightResult.warnings].map((item, index) => (
+                  <div key={`${item.code}-${index}`} className="rounded-lg border border-white/10 bg-black/20 p-3">
+                    <div className="font-mono text-sm font-semibold text-white">{item.code}</div>
+                    <div className="mt-1 text-sm text-slate-300">{item.message}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
       ) : (
         <>

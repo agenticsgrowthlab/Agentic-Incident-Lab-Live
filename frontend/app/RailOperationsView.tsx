@@ -23,7 +23,12 @@ export default function RailOperationsView({rail}:{rail:Rail}) {
   const [busy,setBusy]=useState(false);
   const [resetMessage,setResetMessage]=useState<string|null>(null);
 
-  useEffect(()=>{setScenario(scenarioFromUrl());},[]);
+  useEffect(()=>{
+    const syncScenario=()=>setScenario(scenarioFromUrl());
+    syncScenario();
+    window.addEventListener("popstate",syncScenario);
+    return()=>window.removeEventListener("popstate",syncScenario);
+  },[]);
   useEffect(()=>{fetch(`/api/rails/scenario/${rail}/${scenario}`,{cache:"no-store"}).then(r=>r.ok?r.json():Promise.reject()).then(d=>setSnapshot(d.snapshot)).catch(()=>setSnapshot(null));},[rail,scenario]);
   useEffect(()=>{fetch(`/api/rails/catalog/${rail}`,{cache:"no-store"}).then(r=>r.ok?r.json():Promise.reject()).then(setCatalog).catch(()=>setCatalog(null));},[rail]);
 
