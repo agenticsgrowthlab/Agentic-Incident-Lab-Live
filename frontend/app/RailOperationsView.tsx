@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import RailDailyRunbook from "./RailDailyRunbook";
 
 type Rail = "fednow" | "fedwire" | "rtp";
 type Scenario = "healthy" | "watch" | "critical";
@@ -15,7 +16,7 @@ function scenarioFromUrl():Scenario{if(typeof window==="undefined")return"health
 
 export default function RailOperationsView({rail}:{rail:Rail}) {
   const [scenario,setScenario]=useState<Scenario>("healthy");
-  const [tab,setTab]=useState<"dashboard"|"coverage"|"test">("dashboard");
+  const [tab,setTab]=useState<"dashboard"|"coverage"|"test"|"runbook">("dashboard");
   const [snapshot,setSnapshot]=useState<Snapshot|null>(null);
   const [catalog,setCatalog]=useState<CatalogResponse|null>(null);
   const [file,setFile]=useState<File|null>(null);
@@ -46,7 +47,7 @@ export default function RailOperationsView({rail}:{rail:Rail}) {
   return <div className="rail-operations-view">
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
       <div className="flex flex-wrap items-center gap-2">
-        {[["dashboard","Operations Dashboard"],["coverage","Use Cases Covered"],["test",meta?.test_label||"ISO 20022 Message Test"]].map(([id,label])=>
+        {[["dashboard","Operations Dashboard"],["coverage","Use Cases Covered"],["test",meta?.test_label||"ISO 20022 Message Test"],["runbook","Daily Run Book"]].map(([id,label])=>
           <button key={id} type="button" onClick={()=>setTab(id as typeof tab)} className={`rounded-md px-3 py-2 text-sm font-semibold transition ${tab===id?"bg-cyan-300/10 text-cyan-200 ring-1 ring-cyan-300/25":"text-slate-500 hover:bg-white/[0.04] hover:text-slate-300"}`}>{label}</button>)}
       </div>
       <div className="flex items-center gap-3">{resetMessage&&<span className="text-xs text-slate-500">{resetMessage}</span>}<button type="button" onClick={resetRail} disabled={busy} className="rounded-md border border-red-300/20 bg-red-300/[0.06] px-3 py-2 text-xs font-semibold text-red-200 disabled:opacity-50">{busy?"Working…":"Reset Lab to Red"}</button></div>
@@ -68,6 +69,29 @@ export default function RailOperationsView({rail}:{rail:Rail}) {
     </>}
 
     {tab==="coverage"&&<section className="grid gap-4"><div className="signal-card p-5 sm:p-6"><div className="text-xs font-semibold tracking-[0.14em] text-violet-300">USE CASE COVERAGE · {railNames[rail].toUpperCase()}</div><h1 className="mt-2 text-2xl font-semibold">{catalog?.count??"—"} modeled codes and operational cases</h1><p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">{meta?.coverage_note||"Loading coverage…"}</p></div><div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">{Object.entries(grouped).map(([category,items])=><div key={category} className="signal-card p-5"><div className="text-xs font-semibold tracking-[0.14em] text-cyan-300">{category.toUpperCase()}</div><div className="mt-4 grid gap-3">{items.map((item,index)=><div key={`${item.code}-${item.message_type||""}-${index}`} className="rounded-lg border border-white/10 bg-black/20 p-3"><div className="flex items-center justify-between gap-3"><span className="font-mono text-sm font-semibold text-white">{item.code}</span><span className="text-[10px] text-slate-600">{item.message_type||item.severity}</span></div><div className="mt-2 text-sm text-slate-300">{item.title}</div>{item.public_documentation&&<div className="mt-2 text-[10px] font-semibold text-emerald-400/70">PUBLIC OPERATOR CODE</div>}</div>)}</div></div>)}</div></section>}
+
+    {tab==="runbook"&&
+      <RailDailyRunbook
+        rail={rail}
+        scenario={scenario}
+        transactionId={snapshot?.example_id||null}
+        screenContext={{
+          overall:snapshot?.overall_status||null,
+          reconciliation:snapshot?.reconciliation_rate??null,
+          exceptionCount:snapshot?.exception_count??null,
+          oldestExceptionSeconds:snapshot?.oldest_exception_seconds??null,
+          exampleTransaction:snapshot?{
+            id:snapshot.example_id,
+            status:snapshot.example_status,
+            amount:snapshot.example_amount,
+            messageType:snapshot.example_message_type,
+            currentStage:snapshot.current_stage,
+          }:null,
+          railMetadata:meta||null,
+          latestMessageTest:testResult||null,
+        }}
+      />
+    }
 
     {tab==="test"&&<section className="grid gap-4"><div className="signal-card p-5 sm:p-6"><div className="text-xs font-semibold tracking-[0.14em] text-emerald-300">MESSAGE TEST · DRY RUN</div><h1 className="mt-2 text-2xl font-semibold">{meta?.test_label||"ISO 20022 Message Test"}</h1><p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">Upload a synthetic XML message for structural and selected publicly documented business-rule checks. Nothing is sent to the payment network and no account is touched.</p><div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end"><input type="file" accept=".xml,text/xml,application/xml" onChange={e=>{setFile(e.target.files?.[0]||null);setTestResult(null);}} className="block w-full rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-cyan-300/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-cyan-200"/><button type="button" disabled={!file||busy} onClick={runTest} className="rounded-lg border border-emerald-300/25 bg-emerald-300/[0.10] px-4 py-3 text-sm font-semibold text-emerald-100 disabled:opacity-40">{busy?"Testing…":"Run Message Test"}</button></div></div>{testResult&&<div className={`rounded-xl border p-5 sm:p-6 ${testResult.passed?"border-emerald-300/25 bg-emerald-300/[0.06]":"border-red-300/25 bg-red-300/[0.06]"}`}><div className={`text-xs font-semibold tracking-[0.14em] ${testResult.passed?"text-emerald-300":"text-red-300"}`}>{testResult.passed?"MESSAGE TEST PASSED":"MESSAGE TEST FAILED"}</div><div className="mt-4 grid gap-3 sm:grid-cols-4"><div><div className="text-xs text-slate-500">Message type</div><div className="mt-1 font-mono">{testResult.message_type||"—"}</div></div><div><div className="text-xs text-slate-500">Amount</div><div className="mt-1 font-mono">{testResult.amount!=null?money(testResult.amount):"—"}</div></div><div><div className="text-xs text-slate-500">Errors</div><div className="mt-1 font-mono">{testResult.errors.length}</div></div><div><div className="text-xs text-slate-500">Warnings</div><div className="mt-1 font-mono">{testResult.warnings.length}</div></div></div><div className="mt-5 grid gap-3">{[...testResult.errors,...testResult.warnings].map((item,index)=><div key={`${item.code}-${index}`} className="rounded-lg border border-white/10 bg-black/20 p-3"><div className="font-mono text-sm font-semibold text-white">{item.code}</div><div className="mt-1 text-sm text-slate-300">{item.message}</div></div>)}</div>{testResult.validator_scope&&<p className="mt-4 text-xs leading-5 text-slate-600">{testResult.validator_scope}</p>}</div>}</section>}
   </div>;
