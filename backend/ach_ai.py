@@ -143,9 +143,128 @@ def load_context(scenario: str, transaction_id: str | None) -> dict[str, Any]:
             context["open_failure_cases"] = [*preflight_cases, *return_cases]
     return context
 
+
+def _preflight_association(context: dict[str, Any]) -> dict[str, Any]:
+    tx = context.get("transaction") or {}
+    preflight = context.get("recent_preflight") or {}
+    tx_file = str(tx.get("ach_file_identifier") or "").strip()
+    preflight_file = str(preflight.get("filename") or "").strip()
+    confirmed = bool(tx_file and preflight_file and tx_file == preflight_file)
+    return {
+        "status": "CONFIRMED" if confirmed else "UNCONFIRMED",
+        "transaction_file_identifier": tx_file or None,
+        "preflight_filename": preflight_file or None,
+        "rule": (
+            "Preflight evidence may be used as transaction-causal evidence only when status is CONFIRMED."
+            if confirmed
+            else "This preflight run is background evidence only. Do not attribute the displayed transaction failure to it."
+        ),
+    }
+
+
+def _authoritative_downstream_state(context: dict[str, Any]) -> dict[str, Any]:
+    accepted_stages = {"odfi", "ach operator", "rdfi", "posting"}
+    affirmative = []
+    for event in context.get("events") or []:
+        stage = str(event.get("stage") or "").strip().lower()
+        status = str(event.get("status") or "").strip()
+        if stage in accepted_stages and status:
+            normalized = status.lower()
+            if normalized not in {
+                "unknown", "pending", "blocked", "not sent", "not reached",
+                "waiting", "unavailable", "—", "-"
+            }:
+                affirmative.append({
+                    "stage": event.get("stage"),
+                    "status": status,
+                    "source_system": event.get("source_system"),
+                    "response_code": event.get("response_code"),
+                })
+    return {
+        "known": bool(affirmative),
+        "affirmative_events": affirmative,
+        "rule": (
+            "Affirmative downstream evidence exists."
+            if affirmative
+            else "Downstream acceptance/posting is UNKNOWN. Missing rows, blocked UI states, timeouts, or absent events do not prove non-acceptance or non-posting."
+        ),
+    }
+
+
+def _specialist_context(context: dict[str, Any], specialist_name: str) -> dict[str, Any]:
+    tx = context.get("transaction")
+    events = context.get("events") or []
+    snapshot = context.get("scenario_snapshot")
+    preflight = context.get("recent_preflight")
+    returns = context.get("return_catalog_sample") or []
+    failures = context.get("open_failure_cases") or []
+    association = _preflight_association(context)
+    downstream = _authoritative_downstream_state(context)
+
+    base = {
+        "rail": "ACH",
+        "scenario": context.get("scenario"),
+        "transaction": tx,
+        "scenario_snapshot": snapshot,
+        "preflight_association": association,
+        "authoritative_downstream_state": downstream,
+    }
+
+    if specialist_name == "Nacha Specialist":
+        return {**base, "recent_preflight": preflight, "events": [], "return_catalog_sample": [], "open_failure_cases": []}
+    if specialist_name == "Returns Specialist":
+        return {**base, "recent_preflight": None, "events": [], "return_catalog_sample": returns, "open_failure_cases": failures}
+    if specialist_name == "Account & Authorization Specialist":
+        return {**base, "recent_preflight": None, "events": [], "return_catalog_sample": [], "open_failure_cases": failures}
+    if specialist_name == "Processor & Connectivity Specialist":
+        return {**base, "recent_preflight": None, "events": events, "return_catalog_sample": [], "open_failure_cases": []}
+    if specialist_name == "Posting & Core Specialist":
+        return {**base, "recent_preflight": None, "events": events, "return_catalog_sample": [], "open_failure_cases": []}
+    if specialist_name == "Reconciliation Specialist":
+        return {**base, "recent_preflight": None, "events": events, "return_catalog_sample": [], "open_failure_cases": []}
+    if specialist_name == "Risk & Controls Specialist":
+        return {**base, "recent_preflight": None, "events": [], "return_catalog_sample": [], "open_failure_cases": failures}
+    return base
+
+
+def _sanitize_specialist_finding(name: str, finding: str, context: dict[str, Any]) -> str:
+    downstream = _authoritative_downstream_state(context)
+    if downstream["known"]:
+        return finding
+
+    banned_claims = [
+        r"\bwas never accepted\b",
+        r"\bnever accepted\b",
+        r"\bwas not accepted downstream\b",
+        r"\bnot accepted downstream\b",
+        r"\bwas never posted\b",
+        r"\bnever posted\b",
+        r"\bwas not posted downstream\b",
+        r"\bnot posted downstream\b",
+        r"\bno posting occurred\b",
+        r"\bno downstream acceptance\b",
+        r"\bunlikely to cause duplicate payments\b",
+        r"\bsafe to retry\b",
+        r"\bsafe to replay\b",
+    ]
+    found = any(re.search(pattern, finding, flags=re.IGNORECASE) for pattern in banned_claims)
+    if not found:
+        return finding
+
+    return (
+        finding
+        + " SAFETY CORRECTION: authoritative downstream acceptance/posting evidence is absent. "
+          "Therefore downstream state remains UNKNOWN; this specialist cannot conclude that the payment "
+          "was never accepted or posted, and cannot characterize retry/replay as safe or low duplicate risk."
+    )
+
+
 def _context_text(context: dict[str, Any], screen_context: dict[str, Any]) -> str:
     import json
-    return json.dumps({"database_context": context, "screen_context": screen_context}, indent=2, default=str)
+    governed_context = dict(context)
+    governed_context["preflight_association"] = _preflight_association(context)
+    governed_context["authoritative_downstream_state"] = _authoritative_downstream_state(context)
+    return json.dumps({"database_context": governed_context, "screen_context": screen_context}, indent=2, default=str)
 
 @router.post("/chat")
 def ach_chat(payload: ACHChatRequest) -> dict[str, Any]:
@@ -165,6 +284,7 @@ Do not invent downstream acknowledgements, account status, network outcomes, inc
 ABSENCE OF EVIDENCE IS UNKNOWN, NOT RESOLVED: missing failure-case rows, missing events, unavailable database records, or absent downstream posting records must never be used as proof that an incident is resolved, that a payment succeeded, or that downstream posting did not occur.
 For every returned-payment question, state PAYMENT OUTCOME and OPERATIONS/INCIDENT STATUS as two separate fields. PAYMENT OUTCOME may be RETURNED while OPERATIONS/INCIDENT STATUS remains UNKNOWN or UNRESOLVED. Never collapse those two states.
 For retry/requeue questions, explicitly check whether downstream acceptance/posting is known before recommending replay because duplicate-payment risk matters.
+A recent preflight run is NOT evidence about the displayed transaction unless database_context.preflight_association.status is CONFIRMED. If it is UNCONFIRMED, call it unrelated/background evidence and do not use it as the cause of the displayed transaction failure.
 Distinguish PAYMENT OUTCOME from OPERATIONS STATUS. A returned payment can be operationally resolved without becoming successful, but a missing operations status remains UNKNOWN.
 If a consequential action is proposed, state that human approval is required.
 If material or systemic impact warrants incident escalation, route the handoff to Incident Intelligence / Lindsay, the Incident Commander.
@@ -235,11 +355,15 @@ def ach_team(payload: ACHTeamRequest) -> dict[str, Any]:
         usages = []
 
         for name, role, focus in TEAM[1:]:
+            specialist_context = _specialist_context(context, name)
+            specialist_context_text = _context_text(specialist_context, payload.screen_context)
             finding, usage = call_text(
                 f"""You are {name}, the {role} specialist on an ACH payments operations team.
 {focus}
-Analyze only the supplied context. Do not invent facts.
+Analyze only the supplied specialist-scoped context. Do not invent facts or borrow another specialist's conclusion.
 Treat missing evidence as UNKNOWN, never as proof of success, resolution, non-posting, non-acceptance, or absence of downstream activity.
+PRE-FLIGHT ASSOCIATION RULE: a recent preflight may be used as causal evidence for this displayed transaction only when preflight_association.status is CONFIRMED. UNCONFIRMED preflight evidence must be labeled unrelated/background and must not appear in likely cause.
+DOWNSTREAM INVARIANT: when authoritative_downstream_state.known is false, your finding must literally state "Downstream acceptance/posting: UNKNOWN." Any sentence claiming never accepted, never posted, no posting, safe retry, or unlikely duplicate risk is prohibited.
 If downstream acceptance/posting state is not affirmatively known, duplicate risk MUST remain UNKNOWN or HIGH and you MUST NOT say retry/replay is safe or unlikely to duplicate.
 If screen_context contains visibleTransaction, use it as the operator-visible transaction even if the database transaction is missing.
 State: (1) strongest finding, (2) evidence/signals used, (3) immediate operational implication, (4) what this specialist CANNOT determine from its own evidence.
@@ -256,8 +380,8 @@ If escalation is warranted, the final incident-command handoff is Incident Intel
                 f"""QUESTION
 {payload.question}
 
-ACH CONTEXT
-{context_text}""",
+SPECIALIST-SCOPED ACH CONTEXT
+{specialist_context_text}""",
             )
             normalized_finding = " ".join(finding.split())
             findings.append({"name": name, "role": role, "finding": normalized_finding})
@@ -309,6 +433,8 @@ ACH CONTEXT
             """You are the ACH Operations Lead. Reconcile specialist findings into one safe operating recommendation.
 Prefer database and operator-visible screen evidence over inference. Never recommend retry/requeue when downstream acceptance/posting is ambiguous without first checking authoritative status.
 If ANY specialist claims "not posted", "no downstream acceptance", "safe to retry", "unlikely to duplicate", or equivalent language without affirmative downstream evidence, override that claim as unsupported and set duplicate_risk to UNKNOWN or HIGH.
+HARD INVARIANT: if authoritative_downstream_state.known is false, the synthesis must say downstream acceptance/posting is UNKNOWN and must not repeat any specialist assertion that the payment was never accepted or posted.
+PRE-FLIGHT CAUSALITY: recent_preflight can be cited as the transaction's cause only if preflight_association.status is CONFIRMED. If UNCONFIRMED, it must be excluded from likely_cause and described only as unrelated/background evidence.
 Treat missing evidence as UNKNOWN, never as proof of success, resolution, non-posting, non-acceptance, or absence of an incident.
 For returned-payment questions, keep payment_outcome and operations_status independent. A payment can be RETURNED while operations_status is UNKNOWN or UNRESOLVED when incident/remediation evidence is missing.
 A returned payment may be operationally resolved while remaining RETURNED, but only when there is affirmative evidence of operational resolution.

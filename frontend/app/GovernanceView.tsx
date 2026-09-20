@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 type Rail = "ach"|"fednow"|"fedwire"|"rtp";
 type ActivityRow = {
@@ -27,16 +27,27 @@ type ActivityRow = {
 function isoDate(d:Date){return d.toISOString().slice(0,10);}
 
 export default function GovernanceView({currentRail}:{currentRail?:Rail}) {
-  const today=useMemo(()=>new Date(),[]);
-  const earliest=useMemo(()=>{const d=new Date();d.setUTCDate(d.getUTCDate()-89);return d;},[]);
-  const defaultStart=useMemo(()=>{const d=new Date();d.setUTCDate(d.getUTCDate()-6);return d;},[]);
-  const [startDate,setStartDate]=useState(isoDate(defaultStart));
-  const [endDate,setEndDate]=useState(isoDate(today));
+  const [today,setToday]=useState("");
+  const [earliest,setEarliest]=useState("");
+  const [startDate,setStartDate]=useState("");
+  const [endDate,setEndDate]=useState("");
   const [rail,setRail]=useState<string>(currentRail||"all");
   const [activityFilter,setActivityFilter]=useState("all");
   const [payload,setPayload]=useState<any|null>(null);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState<string|null>(null);
+
+  useEffect(()=>{
+    const now=new Date();
+    const first=new Date(now);
+    first.setUTCDate(first.getUTCDate()-89);
+    const start=new Date(now);
+    start.setUTCDate(start.getUTCDate()-6);
+    setToday(isoDate(now));
+    setEarliest(isoDate(first));
+    setStartDate(isoDate(start));
+    setEndDate(isoDate(now));
+  },[]);
 
   async function load(){
     setLoading(true);setError(null);
@@ -50,7 +61,7 @@ export default function GovernanceView({currentRail}:{currentRail?:Rail}) {
     finally{setLoading(false);}
   }
 
-  useEffect(()=>{load();},[startDate,endDate,rail,activityFilter]);
+  useEffect(()=>{if(startDate&&endDate)load();},[startDate,endDate,rail,activityFilter]);
 
   function download(){
     const qs=new URLSearchParams({start_date:startDate,end_date:endDate,rail,activity_filter:activityFilter});
@@ -71,19 +82,19 @@ export default function GovernanceView({currentRail}:{currentRail?:Rail}) {
             Governance records are retained for up to 90 days for audit.
           </p>
         </div>
-        <button type="button" onClick={download}
-          className="rounded-lg border border-emerald-300/25 bg-emerald-300/[0.08] px-4 py-3 text-sm font-semibold text-emerald-100">
+        <button type="button" onClick={download} disabled={!startDate||!endDate}
+          className="rounded-lg border border-emerald-300/25 bg-emerald-300/[0.08] px-4 py-3 text-sm font-semibold text-emerald-100 disabled:opacity-40">
           Download governance log
         </button>
       </div>
 
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <label className="text-xs text-slate-500">Start date
-          <input type="date" value={startDate} min={isoDate(earliest)} max={endDate} onChange={e=>setStartDate(e.target.value)}
+          <input type="date" value={startDate} min={earliest} max={endDate} onChange={e=>setStartDate(e.target.value)}
             className="mt-1 block w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white"/>
         </label>
         <label className="text-xs text-slate-500">End date
-          <input type="date" value={endDate} min={startDate} max={isoDate(today)} onChange={e=>setEndDate(e.target.value)}
+          <input type="date" value={endDate} min={startDate} max={today} onChange={e=>setEndDate(e.target.value)}
             className="mt-1 block w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white"/>
         </label>
         <label className="text-xs text-slate-500">Rail
@@ -167,6 +178,44 @@ export default function GovernanceView({currentRail}:{currentRail?:Rail}) {
       </div>
     </div>
 
+    <div className="signal-card p-5 sm:p-6">
+      <div className="text-xs font-semibold tracking-[0.14em] text-violet-300">UAT &amp; SAFETY VALIDATION</div>
+      <h2 className="mt-2 text-xl font-semibold">Payments Operations UAT record</h2>
+      <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">
+        Regression history is documented here so operators and reviewers can see what was tested, what passed,
+        what required remediation and what still requires manual verification.
+      </p>
+
+      <div className="mt-5 grid gap-3">
+        <UatRow status="PASS" severity="High" title="Visible ACH transaction context"
+          detail="Copilot recognizes the displayed ACH transaction and warns against blind retry / duplicate-payment risk."/>
+        <UatRow status="PASS" severity="High" title="Nacha preflight validation"
+          detail="Valid ACH file passes; invalid routing check digit fails with ROUTING_CHECK_DIGIT; Chat explains the observed preflight failure."/>
+        <UatRow status="PASS" severity="High" title="Incident escalation"
+          detail="ACH specialists explicitly route material/systemic issues to Incident Intelligence / Lindsay; live Incident Intelligence analysis completes."/>
+        <UatRow status="PASS" severity="Medium" title="Payment outcome vs incident status"
+          detail="Copilot labels payment outcome separately from operations / incident status for returned-payment questions."/>
+        <UatRow status="PASS" severity="Low" title="ACH summary fields"
+          detail="Stage, processor, posting and reconciliation summary fields render instead of empty dashes."/>
+
+        <UatRow status="FIXED · RETEST REQUIRED" severity="High" title="Downstream certainty invariant"
+          detail="Specialists are now hard-guarded: without affirmative downstream events, acceptance/posting remains UNKNOWN. Unsupported claims such as never accepted, never posted, or safe to retry are prohibited and safety-corrected before synthesis."/>
+        <UatRow status="FIXED · RETEST REQUIRED" severity="High" title="Preflight-to-transaction evidence association"
+          detail="Latest preflight evidence is causal only when its file identifier is confirmed against the displayed transaction. Unconfirmed preflight runs are labeled unrelated/background and excluded from likely cause."/>
+        <UatRow status="FIXED · RETEST REQUIRED" severity="High" title="FedNow / FedWire / RTP routing hydration regression"
+          detail="Governance date initialization was moved to client-only hydration to eliminate time-based server/client render divergence associated with React hydration error #418."/>
+        <UatRow status="FIXED · RETEST REQUIRED" severity="Medium" title="Specialist differentiation"
+          detail="Each ACH specialist receives role-scoped evidence and must state its evidence boundary instead of borrowing another specialist's diagnosis."/>
+
+        <UatRow status="UNVERIFIED" severity="Low" title="Reset completion"
+          detail="Reset confirmation opens, but automated browser QA cannot interact with the native confirmation dialog. Requires manual confirmation test."/>
+      </div>
+
+      <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3 text-xs leading-5 text-slate-500">
+        UAT note: synthetic training data only. No source-system payments were transmitted and no real payment action was performed during these tests.
+      </div>
+    </div>
+
     <div className="rounded-xl border border-violet-300/15 bg-violet-300/[0.035] p-4 text-xs leading-5 text-slate-500">
       Governance captures observable commands, evidence sources, outputs, proposed actions, approvals and escalations. It intentionally does not store hidden chain-of-thought.
     </div>
@@ -177,5 +226,24 @@ function GovBox({title,items,text}:{title:string;items?:string[];text?:string}){
   return <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
     <div className="text-[10px] font-semibold tracking-[0.12em] text-slate-500">{title.toUpperCase()}</div>
     {items?<div className="mt-2 grid gap-1">{items.map((item,index)=><div key={index} className="text-xs text-slate-300">• {item}</div>)}{!items.length&&<div className="text-xs text-slate-600">None recorded.</div>}</div>:<div className="mt-2 text-xs leading-5 text-slate-300">{text}</div>}
+  </div>;
+}
+
+
+function UatRow({status,severity,title,detail}:{status:string;severity:string;title:string;detail:string}){
+  const pass=status==="PASS";
+  const pending=status.startsWith("FIXED");
+  const statusClass=pass
+    ?"border-emerald-300/20 bg-emerald-300/[0.05] text-emerald-200"
+    :pending
+      ?"border-cyan-300/20 bg-cyan-300/[0.05] text-cyan-200"
+      :"border-amber-300/20 bg-amber-300/[0.05] text-amber-200";
+  return <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+    <div className="flex flex-wrap items-center gap-2">
+      <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${statusClass}`}>{status}</span>
+      <span className="rounded-full border border-white/10 px-2 py-1 text-[10px] font-semibold text-slate-500">{severity.toUpperCase()}</span>
+      <span className="text-sm font-semibold text-white">{title}</span>
+    </div>
+    <div className="mt-2 text-xs leading-5 text-slate-400">{detail}</div>
   </div>;
 }
