@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import PlatformScenarioView from "./PlatformScenarioView";
 import RailOperationsView from "./RailOperationsView";
+import ThemeToggle from "./ThemeToggle";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -549,6 +550,7 @@ export default function RootLayout({
             <span className="ml-auto hidden text-xs text-slate-600 md:inline">
               Shared agentic intelligence · different operator experience
             </span>
+            <ThemeToggle />
           </div>
         </div>
 
